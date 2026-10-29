@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "stage",
+    "status",
+    "message",
+    "artifacts"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "stage": {
+      "enum": [
+        "plan_run",
+        "preflight",
+        "deploy",
+        "evaluate",
+        "finalize"
+      ]
+    },
+    "status": {
+      "const": "BLOCKED"
+    },
+    "message": {
+      "type": "string"
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 0
+    }
+  }
+}
