@@ -1,6 +1,6 @@
 # AutoBenchmark
 
-当前模型拉起与评测的初版设计见 [设计报告](docs/deployment-evaluation-v1.md)：完整配置包绑定验证环境，common_reference 保存通用检查与排障，不做跨镜像自动匹配。
+当前模型拉起与评测的初版设计见 [设计报告](docs/deployment-evaluation-v1.md)：run_p/run_d 与模型构成组合，按 vLLM release 查找候选，common_reference 保存通用检查与排障。
 
 基于 Skill + Script + Reference 的昇腾模型部署与 AISBench 测评框架。
 
