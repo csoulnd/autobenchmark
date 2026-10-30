@@ -7,6 +7,8 @@ description: 为昇腾一体机上的 vLLM-Ascend 模型部署和 AISBench 精�
 
 ## 新会话入口
 
+新服务器没有旧脚本时，使用 [迁移包说明](references/migration-bundle.md) 与 assets/dsv4-migration/ 内的部署、代理和压测源码；先完成环境核验，不直接启动候选脚本。
+
 先阅读 [会话信息收集与交接](references/intake-handoff.md)。先读取用户提供的交接文件和只读查询环境，再一次性询问无法推导的关键字段；已有明确授权和偏好直接复用。迁移机器时保留测试目标，重新核实主机、容器、卡号、网络、端点配置、权重、版本、端口和路径，不复用旧机器的资源就绪结论。
 
 以 [候选交接示例](references/handoff.example.json) 为起点保存严格 JSON；未知值保持 null，并列入 unresolved，不使用貌似可执行的猜测值。该文件仅保存会话背景；正式参数以 examples/job_spec.dsv4-migration.json 和 schemas/job_spec.schema.json 为准，运行 scripts/plan_run.py --job-spec <配置绝对路径> --run-dir <运行目录绝对路径> 校验。只有信息齐全、现场预检和真实 PD 冒烟都通过后，才可将对应阶段记录为通过。
