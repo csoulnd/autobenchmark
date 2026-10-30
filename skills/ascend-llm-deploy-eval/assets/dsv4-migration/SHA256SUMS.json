@@ -11,6 +11,7 @@
   "aisbench_auto_tools_prefix/save_file.py": "f664683e69c35a7af39c9a4e897b5ec60ccdbcc70e583f31fe3c9b24f63fe756",
   "scripts/apply_npu_mapping_fix.py": "cbe97eab2ec745c48020c5e2d1349d8b8eb234be7f30724f1215f28b5c395855",
   "scripts/env.sh": "e8e2b39d1a3c57f2a7a3d9cbe630d1108c2ef7f9f3bc1a469bacc950125902ba",
+  "scripts/LICENSE-Apache-2.0.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
   "scripts/load_balance_proxy_server_example.py": "48e2b7091a85146707494de3fdfc588cbcce13f9ae10e6deeed655cf70492e3a",
   "scripts/proxy.sh": "bd4629d8691cceb75b4e349e445102b2577278ce1970f5abe73ac30971049726",
   "scripts/run_d.sh": "a1d3779e496a9d74e0254974afc1836ab090769775f4a4e5895f46af36e18f61",
