@@ -1,5 +1,7 @@
 # AutoBenchmark
 
+当前模型拉起与评测的初版设计见 [设计报告](docs/deployment-evaluation-v1.md)：完整配置包绑定验证环境，common_reference 保存通用检查与排障，不做跨镜像自动匹配。
+
 基于 Skill + Script + Reference 的昇腾模型部署与 AISBench 测评框架。
 
 当前已实现 job_spec 结构化校验和 plan_run 计划生成；真实预检、部署、测评和清理尚未实现。未实现阶段返回 BLOCKED 和退出码 2。
