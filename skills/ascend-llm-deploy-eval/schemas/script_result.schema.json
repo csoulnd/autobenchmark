@@ -19,14 +19,14 @@
       ]
     },
     "status": {
-      "const": "BLOCKED"
+      "enum": ["BLOCKED", "PLANNED"]
     },
     "message": {
       "type": "string"
     },
     "artifacts": {
       "type": "array",
-      "maxItems": 0
+      "items": {"type": "string"}
     }
   }
 }
