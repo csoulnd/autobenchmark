@@ -1,6 +1,72 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "run_state (reserved; not implemented)",
-  "$comment": "Reject all input until the execution contract is implemented.",
-  "not": {}
+  "type": "object",
+  "required": [
+    "service",
+    "attempts",
+    "releases"
+  ],
+  "properties": {
+    "service": {
+      "enum": [
+        "ABSENT",
+        "DEPLOYING",
+        "DEPLOYED",
+        "READY",
+        "TESTING",
+        "FAILED",
+        "UNKNOWN",
+        "RELEASED"
+      ]
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "attempt",
+          "folder",
+          "status"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "folder": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "RUNNING",
+              "PASSED",
+              "FAILED"
+            ]
+          }
+        }
+      }
+    },
+    "releases": {
+      "type": "array"
+    },
+    "case_status": {
+      "enum": [
+        "RUNNING",
+        "PASSED",
+        "FAILED"
+      ]
+    },
+    "container_id": {
+      "type": "string"
+    },
+    "image_id": {
+      "type": "string"
+    },
+    "smoke_identity": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  }
 }

@@ -1,0 +1,144 @@
+{
+  "schema_version": "2.0",
+  "job_id": "20261031-002",
+  "state": "ready",
+  "target": {
+    "host": "root@141.61.73.105",
+    "container": "20261031-002",
+    "work_dir": "/home/d00937186/runs/20261031-002",
+    "image": "sha256:2b1263e9f9ca4571b3576b532edd52640ea826b271ba258ada0c2826bf17bcad"
+  },
+  "model": {
+    "path": "/mnt/share/weight/DeepSeek-V4-Flash-0731",
+    "served_name": "dsv",
+    "max_model_len": 1048576
+  },
+  "container": {
+    "shm_size": "500g",
+    "privileged": true,
+    "devices": [
+      "/dev/davinci_manager",
+      "/dev/hisi_hdc",
+      "/dev/ummu",
+      "/dev/uburma",
+      "/dev/davinci0",
+      "/dev/davinci1",
+      "/dev/davinci2",
+      "/dev/davinci3",
+      "/dev/davinci4",
+      "/dev/davinci5",
+      "/dev/davinci6",
+      "/dev/davinci7"
+    ],
+    "mounts": [
+      {
+        "source": "/home/d00937186",
+        "target": "/home/d00937186",
+        "read_only": false
+      },
+      {
+        "source": "/mnt/share/weight",
+        "target": "/mnt/share/weight",
+        "read_only": true
+      },
+      {
+        "source": "/usr/local/Ascend/driver",
+        "target": "/usr/local/Ascend/driver",
+        "read_only": false
+      },
+      {
+        "source": "/usr/local/dcmi",
+        "target": "/usr/local/dcmi",
+        "read_only": false
+      },
+      {
+        "source": "/etc/hixlep",
+        "target": "/etc/hixlep",
+        "read_only": false
+      },
+      {
+        "source": "/etc/hccl_rootinfo.json",
+        "target": "/etc/hccl_rootinfo.json",
+        "read_only": false
+      }
+    ]
+  },
+  "deployment": {
+    "recipe": "assets/dsv4-verified",
+    "parameters": {
+      "network": {
+        "interface": "data0.3001",
+        "ip": "172.27.7.105"
+      },
+      "instances": [
+        {
+          "role": "prefill",
+          "dp": 2,
+          "tp": 2,
+          "ep": true,
+          "device_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "port": 9000,
+          "dp_rpc_port": 12321,
+          "kv_port": 36010,
+          "engine_id": "p0"
+        },
+        {
+          "role": "decode",
+          "dp": 4,
+          "tp": 1,
+          "ep": true,
+          "device_ids": [
+            4,
+            5,
+            6,
+            7
+          ],
+          "port": 9001,
+          "dp_rpc_port": 12325,
+          "kv_port": 36011,
+          "engine_id": "d0"
+        }
+      ],
+      "connector": "MooncakeHybridConnector",
+      "comm_path": "/etc/hixlep",
+      "proxy_port": 9005,
+      "prefix_caching": true
+    }
+  },
+  "benchmark": {
+    "adapter": "aisbench_prefix",
+    "tool_dir": "/home/d00937186/aisbench_auto_tools_prefix",
+    "aisbench_work_path": "/vllm-workspace/vllm-ascend/benchmark",
+    "prefill_dp": 2,
+    "case": {
+      "id": "64k-1k-c32-p50",
+      "input_tokens": 65536,
+      "output_tokens": 1024,
+      "concurrency": 32,
+      "formal_requests": 64,
+      "prefix_ratio": 0.5,
+      "prefix_num": 1,
+      "seed": 1,
+      "request_rate": 0,
+      "warmup": true,
+      "timeout_seconds": 5400,
+      "reset_cache": true
+    }
+  },
+  "execution": {
+    "smoke": "default",
+    "max_retries": 3,
+    "startup_timeout_seconds": 1800,
+    "smoke_timeout_seconds": 240
+  },
+  "cleanup": {
+    "after_case": "keep_service",
+    "task_end": "stop_container"
+  },
+  "unresolved": []
+}

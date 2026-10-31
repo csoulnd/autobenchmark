@@ -1,33 +1,40 @@
 ---
 name: ascend-llm-deploy-eval
-description: 为昇腾一体机上的 vLLM-Ascend 模型部署和 AISBench 精度、性能测评规划任务、选择验证配方并收集证据。
+description: 以 job_spec 引导昇腾模型部署与性能测试，在有人值守阶段收集权重、镜像、case 和工具并初步验证，随后自动部署、冒烟、执行单 case 和按策略释放。适用于已有候选部署配方的性能验证；不包含精度测试、并行调度或复杂自动恢复。
 ---
 
-当前支持 Agent 驱动的信息收集、任务设计与迁移交接；plan_run 已实现配置校验，其余四阶段执行脚本仍为工程骨架，不能用于真实部署或宣称测评完成。
+## 工作方式
 
-## 新会话入口
+以 job_spec 为任务事实与执行约定的来源。先在有人值守阶段完成信息收集、任务合理性评估和初步验证，再自动上机执行最小 case。复用已确认事实，不重复询问。某次实验的镜像、模型、机器、拓扑或清理选择不能成为通用限制。
 
-新服务器没有旧脚本时，使用 [迁移包说明](references/migration-bundle.md) 与 assets/dsv4-migration/ 内的部署、代理和压测源码；先完成环境核验，不直接启动候选脚本。
+1. 按 [信息收集模板](references/intake-handoff.md) 补齐权重、镜像、case、测试工具及目标环境。能只读查询的事实自行核验，缺失项集中询问。
+2. 按 [job_spec 说明](references/job-spec-review.md) 评估任务，选择并检查部署配方，再填写 [v2 单 case 示例](examples/job_spec.single-case.json)。候选配方不是兼容性保证；实际镜像身份与版本在执行时记录。
+3. 执行五阶段。每阶段读取同一份冻结计划；未经确认不缩小测试目标。出错保留证据并落实任务清理。
 
-先阅读 [会话信息收集与交接](references/intake-handoff.md)。先读取用户提供的交接文件和只读查询环境，再一次性询问无法推导的关键字段；已有明确授权和偏好直接复用。迁移机器时保留测试目标，重新核实主机、容器、卡号、网络、端点配置、权重、版本、端口和路径，不复用旧机器的资源就绪结论。
+## 五阶段入口
 
-以 [候选交接示例](references/handoff.example.json) 为起点保存严格 JSON；未知值保持 null，并列入 unresolved，不使用貌似可执行的猜测值。该文件仅保存会话背景；正式参数以 examples/job_spec.dsv4-migration.json 和 schemas/job_spec.schema.json 为准，运行 scripts/plan_run.py --job-spec <配置绝对路径> --run-dir <运行目录绝对路径> 校验。只有信息齐全、现场预检和真实 PD 冒烟都通过后，才可将对应阶段记录为通过。
+在目标 Linux 宿主机运行，使用绝对工作目录：
 
-本次 DSV4 的经验边界见 [DSV4 候选案例](references/dsv4-candidate.md)。用户要求落地时，Agent 可在已授权范围内使用现有工具逐步执行并留证；不要调用占位脚本冒充执行，也不要把交接文件状态当成验证结果。
+```sh
+python3 scripts/plan_run.py --job-spec /path/job_spec.json --run-dir /path/YYYYMMDD-NNN
+python3 scripts/preflight.py --run-dir /path/YYYYMMDD-NNN
+python3 scripts/deploy.py --run-dir /path/YYYYMMDD-NNN
+python3 scripts/evaluate.py --run-dir /path/YYYYMMDD-NNN
+python3 scripts/finalize.py --run-dir /path/YYYYMMDD-NNN
+```
 
-脚本相对于本 Skill 根目录定位，运行产物使用显式绝对路径。
-五个入口依次为 scripts/plan_run.py、preflight.py、deploy.py、evaluate.py、finalize.py。
-计划前由 Agent 通过询问和环境查询补齐必要信息，已有信息直接复用。安装本 Skill requirements.txt 后，由 plan_run 执行 Schema 和跨字段校验。draft 不生成计划；ready 且信息齐全才生成含配置哈希的 plan.json。PLANNED 不表示预检、部署或测试通过。
+- **plan_run**：校验单 case、填默认值、冻结计划并保存 Skill 快照。draft/未决项阻塞自动执行。
+- **preflight**：核验镜像、挂载、权重、工具、设备、网络及端口。有效 READY 服务核验归属后复用，不因本任务自身占卡而阻塞。
+- **deploy**：创建以 job_id 命名的容器，渲染并启动所选配方。默认 `default` 冒烟发送一次非流式 curl 真实推理，检查接口错误和生成内容，保存请求与响应。有效 READY 实例跳过 deploy/smoke；不强制 KV 传输或 DP 覆盖证明。
+- **evaluate**：持有容器级锁，开始前检查服务身份与 READY 状态，执行单个性能 case、核验原始请求和输出长度、单独报告前缀目标与实测命中率。失败尝试使用独立目录，默认最多重试 3 次。
+- **finalize**：按策略保留服务、停止服务或停止容器，记录并核验释放结果；可重复执行。无论测量通过与否都收尾，清理成功不代表测量成功。
 
-保留五脚本职责：plan_run 生成计划；preflight 检查环境、资源和文件；deploy 拉起服务、等待就绪并执行单条真实推理冒烟；evaluate 执行性能测试并收集结果；finalize 汇总、归档并按约定清理。
+状态与释放边界见 [生命周期说明](references/service-lifecycle.md)。每次重试前核验客户端已退出、临时链接已释放、服务身份仍有效；归属不明或残留状态未知时停止重试并上报。耗尽后报告该 case 失败；单 case 实现随即收尾，不包含下一 case 调度。实例变化使旧冒烟失效，不能仅凭 READY 字符串复用。
 
-按 plan - test 模式由 Agent 驱动执行，正常路径沿五入口顺序推进。脚本折叠阶段内的连续操作以减少工具调用和会话轮次；复杂异常返回状态、日志和证据，由 Agent 判断检查、调整或重试。记录关键变更，超出确认范围时询问用户。
+## 实现边界与产物
 
-正常完成或中止均进入 finalize，清理仅限本任务资源且应幂等。Agent 调用不具有语言级 finally 的同等保证，中断恢复机制尚待实现。记录阶段与总耗时、工具调用次数、会话轮次，区分流程时延和推理性能指标。
+当前适配器为 `aisbench_prefix`，支持用户给定负载的前缀性能测试；预热和结果解析是该工具的约定。候选配方为 DSV4 P/D，配方负责模型相关启动参数，通用执行器负责容器、状态、锁、冒烟及清理。其他工具/模型先在值守阶段核验并适配，不能宣称未知组合已验证。
 
-首版假设权重、镜像、工具已准备且部署无异常，聚焦固定场景性能测试。AISBench 运行位置沿用手工验证环境。先手工验证，再由 Agent 执行并提取轨迹，人工调整后以强弱 Agent / Model 组合复现，再组织 Reference。
+job_spec v2 每次只含一个 case、执行一轮。服务复用条件与清理策略已具备；跨 case 管理、精度评测、复杂故障分类、完整 Agent 与强弱模型复现留到后续。
 
-规划时查阅 references/compatibility/ 和 references/deployment-recipes/；测评时查阅 references/aisbench-datasets/；诊断时查阅 references/troubleshooting/。
-当前这些目录尚无已验证配方，不能将占位内容当作已支持能力。
-
-执行以确认的结构化计划为依据，具体交接字段根据轨迹确定。开发验证可使用明确标记为候选的场景配置，不得宣称已验证；审批哈希与生产门禁机制留待后续设计。deploy 负责真实冒烟测试；evaluate 必须核验冒烟证据。性能结论需要 NPU 独占性和条件快照。仅清理本次运行登记的资源，禁止自动 docker pull、特权容器及任意生成的 Shell 命令。
+自动执行保存计划、脚本快照、状态转换、各 attempt 原始结果、错误与释放记录。只操作核实归属的本任务资源，保留共享镜像、权重与证据；不把归档要求强加给手动操作。仓库 `docs/` 只放设计与工程计划，本地日志、报告与归档放在代码仓库之外（本机 `D:/autobenchmark-local/logs/`），不纳入 Git。目标服务器的任务工作目录及其内部 logs/ 布局保持独立。

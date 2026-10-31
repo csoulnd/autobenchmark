@@ -1,75 +1,50 @@
 import copy
-import importlib.util
 import json
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 import unittest
-
-ROOT = Path(__file__).resolve().parents[2] / "skills/ascend-llm-deploy-eval"
-module = importlib.util.spec_from_file_location("planner", ROOT / "scripts/plan_run.py")
-planner = importlib.util.module_from_spec(module)
-module.loader.exec_module(planner)
-
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'skills/ascend-llm-deploy-eval/scripts'))
+import plan_run as planner
+ROOT=planner.PACKAGE
 
 class PlanTests(unittest.TestCase):
-    def setUp(self):
-        self.spec = planner.load_json(ROOT / "examples/job_spec.dsv4-migration.json")
-
-    def test_draft_structure_valid(self):
-        self.assertEqual(planner.validate(self.spec), [])
-
-    def test_reject_mutations(self):
-        mutations = [
-            lambda s: s.update(extra=True),
-            lambda s: s["instances"][1]["device_ids"].__setitem__(0, 0),
-            lambda s: s["instances"][1].update(port=9000),
-            lambda s: s["instances"][0].update(tp=1),
-            lambda s: s["kv_transfer"]["prefill"].update(dp=4),
-            lambda s: s["benchmark"].update(prefix_caching=False),
-            lambda s: s["benchmark"].update(prefill_dp=4),
-            lambda s: s["benchmark"]["cases"][0].update(warmup=False),
-            lambda s: s["benchmark"]["cases"][0].update(prefix_ratio=90),
-            lambda s: s["benchmark"]["cases"][0].update(formal_requests=1),
-            lambda s: s["benchmark"]["cases"][1].update(id="128k-50"),
-            lambda s: s["model"].update(max_model_len=131072),
-            lambda s: s.update(state="ready"),
-            lambda s: s["policies"].update(cleanup_owned_only=False),
-        ]
+    def setUp(self): self.spec=planner.load_json(ROOT/'examples/job_spec.single-case.json')
+    def test_defaults_and_explicit_request_count(self):
+        self.spec.pop('execution')
+        normalized=planner.normalize(self.spec)
+        self.assertEqual(planner.validate(normalized),[])
+        self.assertEqual(normalized['execution']['max_retries'],3)
+        self.assertEqual(normalized['execution']['smoke'],'default')
+        self.assertEqual(normalized['benchmark']['case']['formal_requests'],64)
+    def test_reject_conflicts(self):
+        mutations=[lambda s:s['deployment']['parameters']['instances'][1].update(port=9000),
+            lambda s:s['benchmark']['case'].update(id='../bad'),lambda s:s['target'].update(container='other'),
+            lambda s:s['execution'].update(max_retries=4),lambda s:s['benchmark']['case'].update(formal_requests=1),
+            lambda s:s['deployment'].update(recipe='../../elsewhere'),lambda s:s.update(unresolved=['missing input'])]
         for mutate in mutations:
-            candidate = copy.deepcopy(self.spec)
-            mutate(candidate)
-            with self.subTest(candidate=candidate):
-                self.assertTrue(planner.validate(candidate))
-
-    def test_cli_draft_blocks_ready_generates_and_no_overwrite(self):
+            s=copy.deepcopy(self.spec); mutate(s)
+            self.assertTrue(planner.validate(s))
+    def test_idempotent_and_conflicting_plan(self):
         with tempfile.TemporaryDirectory() as d:
-            d = Path(d)
-            source, run = d / "spec.json", d / "run"
-            def execute():
-                source.write_text(json.dumps(self.spec), encoding="utf-8")
-                return subprocess.run([sys.executable, str(ROOT / "scripts/plan_run.py"),
-                                       "--job-spec", str(source), "--run-dir", str(run)],
-                                      capture_output=True, text=True)
-            self.assertEqual(execute().returncode, 2)
-            self.assertFalse(run.exists())
-            self.spec.update(state="ready", unresolved=[])
-            self.spec["target"].update(host="test.invalid", container="test", work_dir="/workspace",
-                                       image_id="test-fixture")
-            self.spec["model"]["path"] = "/models/test"
-            self.spec["benchmark"].update(tool_dir="/tools", aisbench_work_path="/benchmark")
-            self.assertEqual(execute().returncode, 0)
-            plan = json.loads((run / "plan.json").read_text())
-            self.assertFalse(plan["runtime_verified"])
-            self.assertEqual(len(plan["job_spec_sha256"]), 64)
-            before = (run / "plan.json").read_bytes()
-            self.assertEqual(execute().returncode, 2)
-            self.assertEqual(before, (run / "plan.json").read_bytes())
-
-    def test_duplicate_json_keys_rejected(self):
+            root=Path(d)
+            planner.plan(self.spec,root); before=(root/'plan.json').read_bytes()
+            planner.plan(self.spec,root); self.assertEqual(before,(root/'plan.json').read_bytes())
+            self.spec['benchmark']['case']['formal_requests']=65
+            with self.assertRaises(ValueError): planner.plan(self.spec,root)
+            self.assertEqual(before,(root/'plan.json').read_bytes())
+    def test_recipe_not_bound_to_image_model_or_workdir(self):
+        self.spec['target'].update(image='candidate:test',work_dir='/work/'+self.spec['job_id'])
+        self.spec['model']['path']='/models/alternate'
+        self.spec['container']['mounts']=[{'source':p,'target':p,'read_only':False} for p in ['/work','/models']]
+        self.assertEqual(planner.validate(self.spec),[])
         with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / "spec.json"
-            p.write_text('{"state":"draft","state":"ready"}')
-            with self.assertRaises(ValueError):
-                planner.load_json(p)
+            planner.recipe(self.spec).render(self.spec,Path(d))
+            text=(Path(d)/'run_p.sh').read_text()
+            self.assertIn('/models/alternate',text)
+            self.assertNotIn('/home/d00937186',text)
+            self.assertNotIn('DeepSeek-V4-Flash-0731',text)
+    def test_duplicate_keys(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'x.json'; p.write_text('{"a":1,"a":2}')
+            with self.assertRaises(ValueError):planner.load_json(p)

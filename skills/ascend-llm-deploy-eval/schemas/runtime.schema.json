@@ -1,6 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "runtime (reserved; not implemented)",
-  "$comment": "Reject all input until the execution contract is implemented.",
-  "not": {}
-}

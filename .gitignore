@@ -3,4 +3,6 @@ __pycache__/
 .venv/
 .pytest_cache/
 runs/
+# Artifacts belong outside the repository; ignore accidental local output.
+/logs/
 *.egg-info/
