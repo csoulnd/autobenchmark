@@ -3,12 +3,12 @@
   "job_id": "20261101-001",
   "state": "draft",
   "target": {
-    "host": "root@141.61.73.105"
+    "host": "user@benchmark-host.example"
   },
   "deployments": [
     {
       "id": "pd-a",
-      "image": "sha256:2b1263e9f9ca4571b3576b532edd52640ea826b271ba258ada0c2826bf17bcad",
+      "image": "your-registry.example/vllm-ascend:your-verified-tag",
       "model": {
         "id": "dsv4",
         "served_name": "dsv",
