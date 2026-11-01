@@ -19,6 +19,7 @@ description: 以 job_spec 引导昇腾模型部署与性能测试，收集自然
 python3 scripts/plan_run.py --job-spec /input/job_spec.json --run-dir /work/JOB_ID
 # 将任务包上传到目标机；生成脚本使用包内快照。
 python3 /work/JOB_ID/skill-snapshot/scripts/preflight.py --run-dir /work/JOB_ID --bindings /input/bindings.json
+# 前台入口；Agent 后台提交方式见 references/task-monitoring.md
 bash /work/JOB_ID/run.sh
 # 需要独立收尾时：
 python3 /work/JOB_ID/skill-snapshot/scripts/finalize.py --run-dir /work/JOB_ID
@@ -31,6 +32,10 @@ python3 /work/JOB_ID/skill-snapshot/scripts/finalize.py --run-dir /work/JOB_ID
 - **finalize**：每个 case 核验客户端/临时链接释放并应用服务策略；整组任务结束另做任务级收尾，逐个处理已登记部署的全部节点，即使某一释放失败也检查其他部署。释放失败单独报告，不能被测量通过覆盖。
 
 run.sh 启动串行拓扑协调器。相同部署的连续子任务默认保留服务；切换部署先停止旧部署全部节点容器。实例按 node/container_group 分组，单机 PD 可以共用容器；双机 PD 各节点独立创建。容器使用 job_id 的数字子编号，探测容器使用 -000。节点操作核验归属及脚本摘要，整套服务必须所有节点健康且入口冒烟通过才 READY。
+
+## Agent 提交与主动上报
+
+实际提交任务时遵循 [任务监控](references/task-monitoring.md)：Agent 确认远端执行器独立于 SSH 会话运行后，绑定当前聊天定时监控，默认每5分钟检查；正常运行保持安静，仅在完成、失败或需要人工处理时上报。监控读取现有结果和释放证据，不重新执行任务或自动修复。无法建立监控时明确说明，不能承诺稍后主动通知。应用监控信息保存在仓库外运行记录，不加入 job_spec，也不交给五阶段脚本管理。用户只讨论设计、审阅提交或手工执行时，不自动创建监控。
 
 ## 状态、重试与资源
 
