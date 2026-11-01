@@ -2,11 +2,22 @@
 import json
 import re
 import time
-from stage_runtime import command,entry,inspect_owned,read_plan,save,state,transition,update
+from pathlib import Path
+from stage_runtime import command,entry,inspect_owned,read_plan,save,state,transition,update,pool_state,save_pool
 
 
 def release(root,policy,scope):
-    s=read_plan(root); data=state(root); evidence={'scope':scope,'policy':policy,'status':'kept' if policy=='keep_service' else 'released'}
+    s=read_plan(root)
+    shared=pool_state(s) if s.get('container_registry') else {}
+    if scope=='job' and shared.get('active_run_dir') and shared['active_run_dir']!=str(root):
+        return release(Path(shared['active_run_dir']),policy,scope)
+    if s.get('container_registry'):
+        if shared.get('removed') or not shared.get('container_id'):
+            return {'scope':scope,'policy':policy,'status':'released','verification':'Task container absent or already removed'}
+        if scope!='job' and shared.get('active_run_dir') not in [None,'',str(root)]:
+            raise ValueError('Shared container belongs to another active deployment')
+        update(root,container_id=shared['container_id'],image_id=shared['image_id'])
+    data=state(root); evidence={'scope':scope,'policy':policy,'status':'kept' if policy=='keep_service' else 'released'}
     if policy=='keep_service':
         pass
     elif not data.get('container_id'):
@@ -42,6 +53,16 @@ def release(root,policy,scope):
             if processes.exists():
                 evidence['stopped_processes']=json.loads(processes.read_text())
                 save(processes,[])
+        if policy=='stop_service' and not c['State']['Running']:
+            save(root/'service-processes.json',[])
+        if s.get('container_registry'):
+            save_pool(s,active_run_dir='')
+            if scope=='job' and policy=='stop_container':
+                command(['docker','rm',c['Id']])
+                if command(['docker','ps','-aq','--filter','id='+c['Id']]).strip():
+                    raise RuntimeError('Task container removal not verified')
+                save_pool(s,removed=True)
+                evidence['container_removed']=True
         transition(root,'RELEASED',smoke_identity=None)
     data=state(root); data['releases'].append(evidence); save(root/'run_state.json',data)
     return evidence

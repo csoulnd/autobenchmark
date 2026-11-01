@@ -94,3 +94,40 @@ class LockTests(unittest.TestCase):
             self.assertIn('Container is locked',child.stderr)
         child=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True,env=env)
         self.assertEqual(child.returncode,0,child.stderr)
+
+class SharedContainerTests(unittest.TestCase):
+    def test_service_fingerprint_does_not_own_shared_container(self):
+        self.assertEqual(runtime.ownership_digest({'container_fingerprint':'pool','service_fingerprint':'one'}),'pool')
+        self.assertEqual(runtime.ownership_digest({'container_fingerprint':'pool','service_fingerprint':'two'}),'pool')
+
+    def test_job_end_removes_shared_container_once(self):
+        import finalize
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'logs').mkdir()
+            spec={'container_registry':str(root/'pool.json'),'container_fingerprint':'pool','service_fingerprint':'service'}
+            runtime.save_pool(spec,container_id='cid',image_id='image',active_run_dir=str(root),removed=False)
+            runtime.update(root,service='READY',container_id='cid',image_id='image')
+            c={'Id':'cid','Image':'image','State':{'Running':False,'Pid':0}}
+            with patch.object(finalize,'read_plan',return_value=spec),patch.object(finalize,'inspect_owned',return_value=c),patch.object(finalize,'command',return_value='') as command:
+                result=finalize.release(root,'stop_container','job')
+                repeat=finalize.release(root,'stop_container','job')
+            self.assertTrue(result['container_removed'])
+            self.assertTrue(runtime.pool_state(spec)['removed'])
+            self.assertEqual(sum(c.args[0][:2]==['docker','rm'] for c in command.call_args_list),1)
+            self.assertEqual(repeat['status'],'released')
+
+    def test_switch_reuses_registered_container_and_rejects_active_owner(self):
+        import deploy
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'logs').mkdir();(root/'scripts').mkdir()
+            runtime.save(root/'preflight-evidence.json',{'image_id':'image'})
+            spec={'container_registry':str(root/'pool.json'),'container_fingerprint':'pool','service_fingerprint':'second',
+                  'target':{'container':'job'}}
+            runtime.save_pool(spec,container_id='cid',image_id='image',active_run_dir='previous',removed=False)
+            with patch.object(deploy,'read_plan',return_value=spec),patch.object(deploy,'ready',return_value=False),patch.object(deploy,'check'):
+                with self.assertRaises(ValueError):deploy.start_node(root)
+                runtime.save_pool(spec,active_run_dir='')
+                with patch.object(deploy.subprocess,'run',return_value=SimpleNamespace(returncode=0)),patch.object(deploy,'inspect_owned',return_value={'Id':'cid','Image':'image','State':{'Running':True}}),patch.object(deploy,'command',return_value='') as command:
+                    deploy.start_node(root)
+                self.assertFalse(any(c.args[0][:2]==['docker','run'] for c in command.call_args_list))
+                self.assertEqual(runtime.pool_state(spec)['active_run_dir'],str(root))

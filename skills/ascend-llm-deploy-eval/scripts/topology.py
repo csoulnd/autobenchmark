@@ -94,10 +94,10 @@ def compile_deployment(dep, nodes):
     groups = {}
     for item in instances.values():
         placement = item['placement']
-        key = placement['node']+'/'+placement['container_group']
+        key = placement['node']+'/model'
         node = nodes[placement['node']]
         ports = node['ports'][item['id']]
-        group = groups.setdefault(key, {'node': placement['node'], 'container_group': placement['container_group'],
+        group = groups.setdefault(key, {'node': placement['node'], 'container_group': 'model',
             'commands': [], 'npu_ids': [], 'ports': [], 'health_urls': [], 'model_health_urls':[], 'instances': []})
         group['instances'].append(item['id'])
         group['npu_ids'].extend(placement['devices'])
@@ -143,7 +143,7 @@ def compile_deployment(dep, nodes):
     prefill = next(i for i in instances.values() if i['role'] in ['prefill', 'mixed'])
     endpoint = dep['endpoint']
     return {'groups': groups, 'endpoint': url(endpoint['instance'], endpoint['port']),
-        'endpoint_group': instances[endpoint['instance']]['placement']['node']+'/'+instances[endpoint['instance']]['placement']['container_group'],
+        'endpoint_group': instances[endpoint['instance']]['placement']['node']+'/model',
         'reset_urls': [url(i['id'])+i['checks']['prefix_cache_reset'] for i in instances.values() if i['role'] != 'proxy'],
         'metrics_urls': [url(i['id'])+i['checks']['metrics'] for i in instances.values() if i['role'] != 'proxy'],
         'prefill_url': url(prefill['id']), 'prefill_dp': prefill['launch']['args'].get('data-parallel-size', 1)}

@@ -65,7 +65,7 @@ class SerialTests(unittest.TestCase):
             result=cluster.run(Path(d),spec,resolved)
             self.assertEqual(result['status'],'PASSED')
             self.assertEqual(deploy.call_count,3)
-            self.assertEqual([c.args[1] for c in release.call_args_list],['keep_service','stop_container','keep_service'])
+            self.assertEqual([c.args[1] for c in release.call_args_list],['keep_service','stop_service','keep_service'])
             self.assertEqual([c.kwargs['case']['id'] for c in client.call.call_args_list if c.args[0]=='evaluate'],['t1','t2','t3'])
             finalize.assert_called_once()
 

@@ -10,9 +10,9 @@
 
 ## deployment
 
-model 存逻辑模型 id 与 served_name。runtime 存共用镜像和容器要求。instances 中每个进程有角色 mixed/prefill/decode/proxy，以及 placement（逻辑 node、container_group、devices）、launch（模型 args/env/bootstrap 或内置 proxy adapter）、ports、checks。
+model 存逻辑模型 id 与 served_name。runtime 存共用镜像和容器要求。instances 中每个进程有角色 mixed/prefill/decode/proxy，以及 placement（逻辑 node、devices）、launch（模型 args/env/bootstrap 或内置 proxy adapter）、ports、checks。
 
-同一逻辑 node 和 container_group 共用一个容器；不同节点即使 group 同名也属于独立容器。单机 PD 将 P、D、proxy 放到同一 node，P/D 设备互不重叠。双机 PD 将 P、D 放到不同 node。当前 PD 路径只实现一个 P、一个 D 和一个 proxy；混部只有一个 mixed。DP/TP 必须匹配实例设备数。模型参数以实例 launch.args 为唯一来源，max-model-len 在每个模型实例定义，测试必须满足所有相关实例的上限。
+同一部署同一节点的实例共用容器。容器按任务和现场配置管理，不以 deployment ID 分配：相同主机、镜像及容器配置复用，预检汇总各部署的设备与模型挂载；不兼容配置另建子编号容器。单机 PD 的 P/D 设备互不重叠，双机 PD 的 P/D 分别放到不同 node。当前 PD 路径只实现一个 P、一个 D 和一个 proxy；混部只有一个 mixed。DP/TP 必须匹配实例设备数。模型参数以实例 launch.args 为唯一来源，max-model-len 在每个模型实例定义，测试必须满足所有相关实例的上限。
 
 connections.kv_transfer 关联 producer/consumer 和 connector；connections.routing 关联 proxy、prefillers、decoders。KV 配置中的 P/D DP/TP 与角色由实例关系生成。endpoint 引用对外服务实例和逻辑端口。禁止在 launch.args 重复填写由编译器管理的 host、port、served-model-name、device-ids、kv-transfer-config。
 
@@ -29,3 +29,5 @@ Agent 先将相同版本 Skill 包上传到各节点 package 路径，协调端�
 ## 执行产物
 
 plan.json 固定需求和 sub_task 顺序；resolved-cluster.json 保存拓扑编译结果及节点注册信息。节点保存 discovery.json、各容器的 resolved.json、启动脚本和脚本摘要。resolved-1 是内部节点执行产物，不是另一种用户输入格式。归属摘要与实际容器/进程身份一并核验。配置库尚未实现，仅保留事件埋点。
+
+容器归属摘要与服务摘要分离：前者包含任务计划、镜像与容器配置，后者包含各部署命令和绑定。节点任务目录的 container-pools/<容器名>.json 登记实际容器 ID、当前服务目录及删除状态。旧服务释放核验后才能切换登记；协调器锁与容器锁使用不同名称。

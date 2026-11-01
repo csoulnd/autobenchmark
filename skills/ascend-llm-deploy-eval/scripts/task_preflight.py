@@ -217,15 +217,17 @@ def create_execution(spec, dep, root, index, bindings, network, port_bases, port
         if parsed.scheme != 'http' or parsed.hostname not in ['127.0.0.1', 'localhost', network['ip']] or parsed.port not in ports:
             raise ValueError('Service URL must use allocated local port: '+url)
     mounts = list(bindings.get('mounts', []))
-    for path, read_only in [(str(root), False), (str(model_path.resolve()), True)]:
+    pool=spec.get('container_pool')
+    locations=[(pool['task_root'],False)]+[(str(Path(v).resolve()),True) for v in pool['model_paths']] if pool else [(str(root),False),(str(model_path.resolve()),True)]
+    for path, read_only in locations:
         matching = [m for m in mounts if m['source'] == m['target'] and Path(path).is_relative_to(Path(m['source']))]
-        if path == str(root) and any(m['read_only'] for m in matching):
+        if not read_only and any(m['read_only'] for m in matching):
             raise ValueError('Task workspace must be writable in container')
         if not matching:
             mounts.append({'source': path, 'target': path, 'read_only': read_only})
     if len({m['target'] for m in mounts}) != len(mounts):
         raise ValueError('Duplicate mount targets')
-    devices = ['/dev/davinci'+str(i) for i in dep['npu_ids']]
+    devices = ['/dev/davinci'+str(i) for i in (pool['devices'] if pool else dep['npu_ids'])]
     devices += [str(p) for p in map(Path, ['/dev/davinci_manager', '/dev/hisi_hdc', '/dev/ummu', '/dev/uburma']) if p.exists()]
     container = {**dep['container'], 'devices': devices, 'mounts': mounts}
     generated=list((child/'scripts').glob('start-*.sh'))
@@ -242,6 +244,11 @@ def create_execution(spec, dep, root, index, bindings, network, port_bases, port
         'benchmark': {'adapter': 'aisbench_prefix', 'tool_dir': str(PACKAGE/'assets/aisbench-prefix'),
                       'aisbench_work_path': tools['aisbench_work_path'], 'prefill_dp': dep['prefill_dp']},
         'execution': spec['execution'], 'cleanup': spec['cleanup']}
+    if pool:
+        execution['job_id']=pool['job_id']
+        execution['target']['container']=pool['name']
+        execution['container_fingerprint']=digest({'job_id':pool['job_id'],'plan':pool['plan_sha256'],'image':image,'container':container})
+        execution['container_registry']=str(Path(pool['task_root'])/'container-pools'/(pool['name']+'.json'))
     save(child/'resolved.json', execution)
     save(child/'plan.json', {'execution_spec': execution, 'execution_sha256': digest(execution)})
     save(child/'scripts/service.json', service)

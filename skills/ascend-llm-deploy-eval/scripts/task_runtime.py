@@ -57,7 +57,7 @@ def validate_task(spec):
 def stage_entry(stage, root, bindings=None):
     spec=read_task(root)
     from cluster_runtime import preflight, run, finalize
-    with locked({'target':{'container':spec['job_id']}}):
+    with locked({'target':{'container':spec['job_id']+'-coordinator'}}):
         if stage=='preflight':
             values=json.loads(Path(bindings or root/'bindings.json').read_text(encoding='utf-8-sig'))
             frozen=root/'resolved-cluster.json'

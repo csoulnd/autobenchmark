@@ -28,7 +28,30 @@ def prepare_call(binding, request):
     return response['result']
 
 
+def container_pools(spec, bindings):
+    """One compatible task container per host/runtime; union known mounts/devices."""
+    pools, assignments, host_counts = {}, {}, {}
+    for dep in spec['deployments']:
+        for slot in sorted({i['placement']['node'] for i in dep['instances']}):
+            binding=bindings['nodes'][slot]
+            key=(binding['host'],digest({'runtime':dep['runtime'],'work_dir':binding['work_dir'],
+                'mounts':binding.get('mounts',[])}))
+            if key not in pools:
+                number=host_counts.get(binding['host'],0)+1;host_counts[binding['host']]=number
+                name=spec['job_id'] if number==1 else spec['job_id']+f'-{number:03}'
+                pools[key]={'name':name,'job_id':spec['job_id'],'task_root':str(Path(binding['work_dir'])/spec['job_id']),
+                    'devices':set(),'model_paths':set(),'plan_sha256':digest(spec)}
+            pool=pools[key]
+            pool['devices'].update(d for i in dep['instances'] if i['placement']['node']==slot for d in i['placement']['devices'])
+            pool['model_paths'].add(binding['model_paths'][dep['model']['id']])
+            assignments[(dep['id'],slot)]=pool
+    for pool in pools.values():
+        pool['devices']=sorted(pool['devices']);pool['model_paths']=sorted(pool['model_paths'])
+    return assignments
+
+
 def preflight(root, spec, bindings):
+    pools=container_pools(spec,bindings)
     result = {'plan_sha256': digest(spec), 'bindings_sha256': digest(bindings), 'deployments': {}}
     for dep_index, dep in enumerate(spec['deployments'], 1):
         used = sorted({i['placement']['node'] for i in dep['instances']})
@@ -63,7 +86,8 @@ def preflight(root, spec, bindings):
                 'container': dep['runtime']['container'], 'npu_ids': group['npu_ids'],
                 'commands': group['commands'], 'service': service, 'prefill_dp': compiled['prefill_dp']}
             local_spec = {'job_id': spec['job_id']+f'-{dep_index:03}', 'target': {'host': binding['host']},
-                          'execution': spec['execution'], 'cleanup': spec['cleanup']}
+                          'execution': spec['execution'], 'cleanup': spec['cleanup'],
+                          'container_pool':pools[(dep['id'],group['node'])]}
             reply = prepare_call({**binding,'package':node['package']}, {'action': 'render', 'run_dir': node['root'],
                 'job_id': local_spec['job_id'], 'spec': local_spec, 'deployment': flat, 'index': group_index,
                 'bindings': binding, 'ports': group['ports']})
@@ -170,7 +194,7 @@ def reconcile_failure(root, deployment, case_id):
     if all(v=='READY' for v in states):
         save(root/'service-state.json',{'status':'READY','identities':{k:v['identity'] for k,v in observations.items()}})
         return {'continue':True,'nodes':observations}
-    releases=release_all(deployment,'stop_container','failed_sub_task')
+    releases=release_all(deployment,'stop_service','failed_sub_task')
     safe=all(v['status']=='PASSED' for v in releases.values())
     save(root/'service-state.json',{'status':'RELEASED' if safe else 'UNKNOWN'})
     return {'continue':safe,'nodes':observations,'releases':releases}
@@ -227,7 +251,9 @@ def run(root, spec, resolved):
                 from task_runtime import storage_event
                 storage_event(root,'case_finished',sub_task_id=subtask['id'],case_id=subtask['case_id'],deployment_id=dep_id,status=results[subtask['id']]['status'])
             next_dep = spec['sub_tasks'][index+1]['deployment_id'] if index+1 < len(spec['sub_tasks']) else None
-            policy = 'stop_container' if next_dep and next_dep != dep_id else subtask['after_case']
+            policy = subtask['after_case']
+            if next_dep and next_dep != dep_id and policy=='keep_service':
+                policy='stop_service'
             releases = release_all(dep, policy, 'sub_task:'+subtask['id'])
             save(folder/'release.json', releases)
             if any(r['status'] != 'PASSED' for r in releases.values()):

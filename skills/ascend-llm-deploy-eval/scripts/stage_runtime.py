@@ -43,7 +43,21 @@ def read_plan(root):
 
 
 def ownership_digest(spec):
-    return spec['service_fingerprint']
+    return spec.get('container_fingerprint',spec['service_fingerprint'])
+
+
+def pool_state(spec):
+    path=Path(spec['container_registry'])
+    if not path.exists(): return {}
+    record=json.loads(path.read_text())
+    if record.get('fingerprint')!=ownership_digest(spec):
+        raise ValueError('Task container registry configuration changed')
+    return record
+
+
+def save_pool(spec, **values):
+    record=pool_state(spec);record.update(values,fingerprint=ownership_digest(spec))
+    save(spec['container_registry'],record)
 
 
 def case_state(root,case_id):
@@ -108,7 +122,10 @@ def http(url,method='GET'):
 
 
 def service_identity(spec,root):
-    data=state(root); c=inspect_owned(spec,data.get('container_id'))
+    data=state(root)
+    if spec.get('container_registry') and pool_state(spec).get('active_run_dir')!=str(root):
+        raise ValueError('Container is assigned to another service')
+    c=inspect_owned(spec,data.get('container_id'))
     if not c['State']['Running'] or c['Image']!=data.get('image_id'):
         raise ValueError('Registered container is not running or image changed')
     raw=command(['docker','exec',c['Id'],'python3',str(root/'scripts/service_process.py'),'identity',str(root)])

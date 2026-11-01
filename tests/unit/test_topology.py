@@ -13,7 +13,7 @@ def deployment(two_nodes=True):
         ('d', 'decode', 'b' if two_nodes else 'a', [0,1,2,3] if two_nodes else [4,5,6,7], 4, 1),
         ('proxy', 'proxy', 'a', [], 1, 1)]:
         instances.append({'id': name, 'role': role,
-            'placement': {'node': node, 'container_group': 'model', 'devices': devices},
+            'placement': {'node': node, 'devices': devices},
             'launch': {'args': {'data-parallel-size': dp, 'tensor-parallel-size': tp, 'max-model-len': 4096}},
             'ports': {'http':1, **({'kv':1} if role != 'proxy' else {})},
             'checks': {'health':'/health', 'prefix_cache_reset':'/reset_prefix_cache','metrics':'/metrics'}})

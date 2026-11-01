@@ -19,7 +19,7 @@ python3 /work/JOB_ID/skill-snapshot/scripts/preflight.py --run-dir /work/JOB_ID 
 bash /work/JOB_ID/run.sh
 ```
 
-plan_run 生成串行入口；preflight 动态绑定 IP、网卡、端口、路径并生成启动脚本。随后每个 sub_task 经过 deploy → evaluate → finalize：同部署的有效服务默认复用，切换部署停止旧容器，任务结束默认停止本任务服务和容器。默认一次 curl 冒烟，异常最多额外重试3次；安全条件不满足时停止继续测试并收尾。
+plan_run 生成串行入口；preflight 动态绑定 IP、网卡、端口、路径并生成启动脚本。随后每个 sub_task 经过 deploy → evaluate → finalize：同部署的有效服务默认复用，切换部署默认只停止旧服务并复用兼容容器，任务结束默认停止服务并删除本任务容器。默认一次 curl 冒烟，异常最多额外重试3次；安全条件不满足时停止继续测试并收尾。
 
 配置存储暂只有标准化、现场绑定、部署验证和 case 结束事件，不实现配置库或检索。任意脚本转为规范命令仍需 Agent 审阅；包上传由 Agent 完成；执行器通过 SSH 调用固定节点脚本。没有精度、phase 并行屏障或复杂中断恢复。仅接受 job_spec v3，不提供旧格式兼容。
 

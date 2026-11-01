@@ -23,7 +23,6 @@
           "role": "prefill",
           "placement": {
             "node": "node_a",
-            "container_group": "model",
             "devices": [
               0,
               1,
@@ -91,7 +90,6 @@
           "role": "decode",
           "placement": {
             "node": "node_a",
-            "container_group": "model",
             "devices": [
               4,
               5,
@@ -162,7 +160,6 @@
           "role": "proxy",
           "placement": {
             "node": "node_a",
-            "container_group": "model",
             "devices": []
           },
           "launch": {
