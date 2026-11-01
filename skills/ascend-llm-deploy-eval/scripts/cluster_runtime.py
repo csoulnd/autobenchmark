@@ -157,6 +157,25 @@ def finalize(root, spec, resolved):
     return {'status':'FAILED' if failed else 'PASSED', 'message':'All registered node releases checked', 'artifacts':[str(root/'release-results.json')], 'releases':results}
 
 
+def reconcile_failure(root, deployment, case_id):
+    try:
+        observations={key:node.call('assess_failure',case_id=case_id) for key,node in clients(deployment).items()}
+    except Exception as exc:
+        save(root/'service-state.json',{'status':'UNKNOWN','error':repr(exc)})
+        return {'continue':False,'error':repr(exc)}
+    states=[v['service'] for v in observations.values()]
+    if not states or 'UNKNOWN' in states:
+        save(root/'service-state.json',{'status':'UNKNOWN'})
+        return {'continue':False,'nodes':observations}
+    if all(v=='READY' for v in states):
+        save(root/'service-state.json',{'status':'READY','identities':{k:v['identity'] for k,v in observations.items()}})
+        return {'continue':True,'nodes':observations}
+    releases=release_all(deployment,'stop_container','failed_sub_task')
+    safe=all(v['status']=='PASSED' for v in releases.values())
+    save(root/'service-state.json',{'status':'RELEASED' if safe else 'UNKNOWN'})
+    return {'continue':safe,'nodes':observations,'releases':releases}
+
+
 def run(root, spec, resolved):
     if (root/'summary.json').exists():
         summary=json.loads((root/'summary.json').read_text())
@@ -182,21 +201,26 @@ def run(root, spec, resolved):
             # case ID in result artifacts identifies the execution, not the reusable load definition.
             case = copy.deepcopy(next(c for c in spec['cases'] if c['id'] == subtask['case_id']))
             case['id'] = subtask['id']
+            failure_stage='deploy'
             try:
                 deploy(deployment_root, {**spec,'_served_name':definition['model']['served_name']}, dep)
                 from task_runtime import storage_event
                 storage_event(root,'deployment_verified',deployment_id=dep_id)
                 client = clients(dep)[dep['compiled']['endpoint_group']]
                 before={key:node.call('identity')['identity'] for key,node in clients(dep).items()}
+                failure_stage='evaluate'
                 result = client.call('evaluate', timeout=(case['timeout_seconds']+120)*(spec['execution']['max_retries']+1), case=case)
                 after={key:node.call('identity')['identity'] for key,node in clients(dep).items()}
                 if before!=after:
                     raise RuntimeError('A topology service changed during evaluation')
                 results[subtask['id']] = result
             except Exception as exc:
-                results[subtask['id']] = {'status':'FAILED','error':repr(exc)}
-                # First multi-node path stops on uncertain transport/service state.
-                break
+                recovery=reconcile_failure(deployment_root,dep,subtask['id'])
+                results[subtask['id']] = {'status':'FAILED','error':repr(exc),'failure_stage':failure_stage,
+                    'on_failure':subtask['on_failure'],'phase_id':subtask['phase_id'],'reconciliation':recovery}
+                if not recovery['continue']:
+                    results[subtask['id']]['blocked']=True
+                    break
             finally:
                 save(folder/'result.json', results[subtask['id']])
                 save(progress,results)
@@ -208,6 +232,8 @@ def run(root, spec, resolved):
             save(folder/'release.json', releases)
             if any(r['status'] != 'PASSED' for r in releases.values()):
                 results[subtask['id']]['release_failed'] = True
+                save(folder/'result.json',results[subtask['id']])
+                save(progress,results)
                 break
             if policy != 'keep_service':
                 save(deployment_root/'service-state.json', {'status':'RELEASED'})

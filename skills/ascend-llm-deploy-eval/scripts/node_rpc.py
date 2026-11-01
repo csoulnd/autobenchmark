@@ -64,6 +64,30 @@ def execute(request):
             from finalize import release
             result = release(root, request['policy'], request['scope'])
             return {'status': 'PASSED', 'release': result}
+        if action == 'assess_failure':
+            from stage_runtime import inspect_owned, command
+            data=state(root)
+            if not data.get('container_id'):
+                return {'status':'PASSED','service':'ABSENT'}
+            container=inspect_owned(spec,data['container_id'])
+            if not container['State']['Running']:
+                return {'status':'PASSED','service':'DEAD'}
+            case=data.get('cases',{}).get(request['case_id'],{})
+            if case.get('status')=='RUNNING' or any(not a.get('cleanup',{}).get('released') for a in case.get('attempts',[])):
+                return {'status':'PASSED','service':'UNKNOWN','reason':'Client cleanup unverified'}
+            probe=json.loads(command(['docker','exec',container['Id'],'python3',str(root/'scripts/service_process.py'),'probe',str(root)]))
+            if not probe['alive']:
+                transition(root,'UNKNOWN',smoke_identity=None)
+                return {'status':'PASSED','service':'DEAD'}
+            identity=service_identity(spec,root)
+            if identity!=data.get('smoke_identity'):
+                return {'status':'PASSED','service':'UNKNOWN','reason':'Service generation not verified'}
+            try:
+                for url in spec['deployment']['service']['health_urls']: http(url)
+            except Exception as exc:
+                return {'status':'PASSED','service':'UNKNOWN','reason':repr(exc)}
+            transition(root,'READY',cache_state='NEEDS_RESET')
+            return {'status':'PASSED','service':'READY','identity':identity}
         if action == 'state':
             return {'status': 'PASSED', 'state': state(root)}
         raise ValueError('Unknown node action')

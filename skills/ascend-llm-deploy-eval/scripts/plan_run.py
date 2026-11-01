@@ -30,6 +30,8 @@ def normalize(spec):
                 case.setdefault(k,v)
     for subtask in s.get('sub_tasks', []):
         subtask.setdefault('after_case', s['cleanup']['after_case'])
+        subtask.setdefault('phase_id', 'pp1')
+        subtask.setdefault('on_failure', 'record_only')
     return s
 
 

@@ -6,7 +6,7 @@
 
 - deployments：每项为完整服务拓扑，包含 id、topology、model、runtime、instances、connections、endpoint。
 - cases：仅描述负载：输入/输出 token、并发、请求数、前缀目标等，不引用部署。默认请求数并发×4，显式值优先。
-- sub_tasks：显式串行执行清单，id、deployment_id、case_id、after_case。一个 case 可以被多个子任务引用；结果用 sub_task ID 隔离。当前不支持 phase 并行屏障。
+- sub_tasks：显式串行执行清单，id、phase_id、deployment_id、case_id、after_case、on_failure。phase_id 默认 pp1，仅为分组标识，执行仍按清单顺序；on_failure 当前仅支持 record_only。一个 case 可以被多个子任务引用；结果用 sub_task ID 隔离。当前不支持 phase 并行屏障。
 
 ## deployment
 

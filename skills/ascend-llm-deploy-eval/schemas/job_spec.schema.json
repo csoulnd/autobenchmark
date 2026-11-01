@@ -440,6 +440,15 @@
               "stop_service",
               "stop_container"
             ]
+          },
+          "phase_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "on_failure": {
+            "enum": [
+              "record_only"
+            ]
           }
         },
         "required": [

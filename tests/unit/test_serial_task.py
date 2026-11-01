@@ -119,3 +119,45 @@ class CaseIsolationTests(unittest.TestCase):
             self.assertEqual(calls,[('first',f'attempt-{i:02}') for i in range(1,5)]+[('second','attempt-01')])
             self.assertEqual(runtime.case_state(root,'first')['status'],'FAILED')
             self.assertEqual(runtime.case_state(root,'second')['status'],'PASSED')
+
+class RecordOnlyTests(unittest.TestCase):
+    def test_failed_case_continues_and_overall_remains_failed(self):
+        spec=plan_run.normalize(fixture())
+        dep={'compiled':{'endpoint_group':'g'}}
+        client=MagicMock()
+        def call(action,**kwargs):
+            if action=='evaluate' and kwargs['case']['id']=='t1':raise RuntimeError('case failed')
+            return {'status':'PASSED','identity':{'test':1}}
+        client.call.side_effect=call
+        with tempfile.TemporaryDirectory() as d,patch.object(cluster,'deploy'),patch.object(cluster,'clients',return_value={'g':client}),patch.object(cluster,'reconcile_failure',return_value={'continue':True}),patch.object(cluster,'release_all',return_value={'g':{'status':'PASSED'}}),patch.object(cluster,'finalize',return_value={'status':'PASSED'}):
+            result=cluster.run(Path(d),spec,{'deployments':{'a':dep,'b':dep}})
+            self.assertEqual(result['status'],'FAILED')
+            self.assertEqual([result['sub_tasks'][x]['status'] for x in ['t1','t2','t3']],['FAILED','PASSED','PASSED'])
+            self.assertEqual(result['sub_tasks']['t1']['on_failure'],'record_only')
+
+    def test_reconcile_health_death_and_unknown(self):
+        for status,release_ok,expected in [('READY',True,'READY'),('DEAD',True,'RELEASED'),('DEAD',False,'UNKNOWN'),('UNKNOWN',True,'UNKNOWN')]:
+            with self.subTest(status=status,release_ok=release_ok),tempfile.TemporaryDirectory() as d:
+                node=MagicMock();node.call.return_value={'service':status,'identity':{'pid':1}}
+                with patch.object(cluster,'clients',return_value={'g':node}),patch.object(cluster,'release_all',return_value={'g':{'status':'PASSED' if release_ok else 'FAILED'}}) as release:
+                    result=cluster.reconcile_failure(Path(d),{},'t1')
+                self.assertEqual(json.loads((Path(d)/'service-state.json').read_text())['status'],expected)
+                self.assertEqual(result['continue'],expected!='UNKNOWN')
+                self.assertEqual(release.call_count,1 if status=='DEAD' else 0)
+
+    def test_reconcile_disconnect_never_releases(self):
+        node=MagicMock();node.call.side_effect=TimeoutError('offline')
+        with tempfile.TemporaryDirectory() as d,patch.object(cluster,'clients',return_value={'g':node}),patch.object(cluster,'release_all') as release:
+            self.assertFalse(cluster.reconcile_failure(Path(d),{},'t1')['continue'])
+            release.assert_not_called()
+
+    def test_process_probe_distinguishes_exit_from_pid_reuse(self):
+        import service_process
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);runtime.save(root/'service-processes.json',[{'pid':12,'start_ticks':'100'}])
+            output=io.StringIO()
+            with patch.object(service_process,'ticks',return_value=None),redirect_stdout(output):
+                service_process.main('probe',root)
+            self.assertFalse(json.loads(output.getvalue())['alive'])
+            with patch.object(service_process,'ticks',return_value='200'):
+                with self.assertRaises(ValueError):service_process.main('probe',root)

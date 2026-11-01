@@ -41,6 +41,12 @@ def main(action,root):
                 proc=subprocess.Popen(item['argv'],stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
             data.append({'name':item['name'],'pid':proc.pid,'start_ticks':ticks(proc.pid)})
             path.write_text(json.dumps(data,indent=2))
+    elif action=='probe':
+        observed=[ticks(x['pid']) for x in data]
+        if any(now is not None and now!=old['start_ticks'] for old,now in zip(data,observed)):
+            raise ValueError('Process identity changed')
+        print(json.dumps({'alive':bool(data) and all(x is not None for x in observed)}))
+        return
     elif action=='identity':
         if not data or any(ticks(x['pid'])!=x['start_ticks'] or x['start_ticks'] is None for x in data):
             raise ValueError('Service process missing or identity changed')

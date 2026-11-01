@@ -226,12 +226,18 @@
     {
       "id": "test-1",
       "deployment_id": "pd-a",
-      "case_id": "64k-c16-p50"
+      "case_id": "64k-c16-p50",
+      "phase_id": "pp1",
+      "after_case": "keep_service",
+      "on_failure": "record_only"
     },
     {
       "id": "test-2",
       "deployment_id": "pd-a",
-      "case_id": "64k-c32-p50"
+      "case_id": "64k-c32-p50",
+      "phase_id": "pp1",
+      "after_case": "keep_service",
+      "on_failure": "record_only"
     }
   ]
 }
