@@ -87,10 +87,11 @@ class LockTests(unittest.TestCase):
         import os
         import subprocess
         spec={'target':{'container':'unit-lock-'+str(os.getpid())}}
+        env=dict(os.environ, PYTHONPATH=str(Path(runtime.__file__).parent))
         code='import json; from stage_runtime import locked\nspec=json.loads('+repr(json.dumps(spec))+')\nwith locked(spec): print("acquired")'
         with runtime.locked(spec):
-            child=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True)
+            child=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True,env=env)
             self.assertNotEqual(child.returncode,0)
             self.assertIn('Container is locked',child.stderr)
-        child=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True)
+        child=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True,env=env)
         self.assertEqual(child.returncode,0,child.stderr)

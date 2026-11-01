@@ -1,40 +1,47 @@
 ---
 name: ascend-llm-deploy-eval
-description: 以 job_spec 引导昇腾模型部署与性能测试，在有人值守阶段收集权重、镜像、case 和工具并初步验证，随后自动部署、冒烟、执行单 case 和按策略释放。适用于已有候选部署配方的性能验证；不包含精度测试、并行调度或复杂自动恢复。
+description: 以 job_spec 引导昇腾模型部署与性能测试，收集自然语言的服务器、部署与测试需求，规范化后完成有人值守预检，再串行执行部署、冒烟、测试和分级收尾。适用于已审阅启动配置的前缀性能测试；不包含精度、并行调度或复杂自动恢复。
 ---
 
 ## 工作方式
 
-以 job_spec 为任务事实与执行约定的来源。先在有人值守阶段完成信息收集、任务合理性评估和初步验证，再自动上机执行最小 case。复用已确认事实，不重复询问。某次实验的镜像、模型、机器、拓扑或清理选择不能成为通用限制。
+接受用户直接描述服务器、部署形式及对应测试需求，Agent 负责标准化为内部 case。单 case 是执行和管理单元，不作为首次对话限制；不要求用户理解 Schema 或先拆分任务。首次回复只询问实际缺项，不附加默认规则、工具检查职责或通用能力边界说明。具体需求出现歧义或能力缺口时，在承诺执行前说明。
 
-1. 按 [信息收集模板](references/intake-handoff.md) 补齐权重、镜像、case、测试工具及目标环境。能只读查询的事实自行核验，缺失项集中询问。
-2. 按 [job_spec 说明](references/job-spec-review.md) 评估任务，选择并检查部署配方，再填写 [v2 单 case 示例](examples/job_spec.single-case.json)。候选配方不是兼容性保证；实际镜像身份与版本在执行时记录。
-3. 执行五阶段。每阶段读取同一份冻结计划；未经确认不缩小测试目标。出错保留证据并落实任务清理。
+1. 使用 [信息收集模板](references/intake-handoff.md)。本地脚本、远程脚本或粘贴内容只是输入来源；读取并审阅后提取命令、环境与部署参数，不把源脚本路径作为执行依赖。不盲目复制旧机器的权重位置、IP、网卡和端口。
+2. 按 [任务配置与现场绑定](references/job-spec-review.md) 形成 job_spec v3。配置按服务器、部署、case 关联，case 顺序明确；默认请求数由并发×4计算并显式保存，用户覆盖值优先。配置存储暂只记录事件，不实现配置库、版本检索或自动选配。
+3. 完成有人值守阶段的现场预检与参数绑定后启动生成的串行任务入口。每个 case 都经过 deploy → evaluate → finalize，deploy 依据当前服务状态决定复用或启动。未经确认不调小负载或改变部署参数。
 
-## 五阶段入口
+## 五阶段与生成入口
 
-在目标 Linux 宿主机运行，使用绝对工作目录：
+规划可在本地完成，随后将完整任务目录传到目标 Linux 主机；现场路径绑定和执行在目标机进行。本地任务目录及日志必须放在代码仓库之外。以 [任务示例](examples/job_spec.serial.json) 的结构填写实际需求，不能直接把示例负载当作授权。
 
 ```sh
-python3 scripts/plan_run.py --job-spec /path/job_spec.json --run-dir /path/YYYYMMDD-NNN
-python3 scripts/preflight.py --run-dir /path/YYYYMMDD-NNN
-python3 scripts/deploy.py --run-dir /path/YYYYMMDD-NNN
-python3 scripts/evaluate.py --run-dir /path/YYYYMMDD-NNN
-python3 scripts/finalize.py --run-dir /path/YYYYMMDD-NNN
+python3 scripts/plan_run.py --job-spec /input/job_spec.json --run-dir /work/JOB_ID
+# 将任务包上传到目标机；生成脚本使用包内快照。
+python3 /work/JOB_ID/skill-snapshot/scripts/preflight.py --run-dir /work/JOB_ID --bindings /input/bindings.json
+bash /work/JOB_ID/run.sh
+# 需要独立收尾时：
+python3 /work/JOB_ID/skill-snapshot/scripts/finalize.py --run-dir /work/JOB_ID
 ```
 
-- **plan_run**：校验单 case、填默认值、冻结计划并保存 Skill 快照。draft/未决项阻塞自动执行。
-- **preflight**：核验镜像、挂载、权重、工具、设备、网络及端口。有效 READY 服务核验归属后复用，不因本任务自身占卡而阻塞。
-- **deploy**：创建以 job_id 命名的容器，渲染并启动所选配方。默认 `default` 冒烟发送一次非流式 curl 真实推理，检查接口错误和生成内容，保存请求与响应。有效 READY 实例跳过 deploy/smoke；不强制 KV 传输或 DP 覆盖证明。
-- **evaluate**：持有容器级锁，开始前检查服务身份与 READY 状态，执行单个性能 case、核验原始请求和输出长度、单独报告前缀目标与实测命中率。失败尝试使用独立目录，默认最多重试 3 次。
-- **finalize**：按策略保留服务、停止服务或停止容器，记录并核验释放结果；可重复执行。无论测量通过与否都收尾，清理成功不代表测量成功。
+- **plan_run**：校验并冻结标准任务、计算默认值、保存 case 顺序和执行代码快照，生成 run.sh。计划阶段允许现场位置尚未绑定；draft 或未决测试目标不进入可执行计划。
+- **preflight**：在有人值守阶段解析现场信息，检查镜像、模型、挂载、网络、设备与工具。动态发现镜像内 AISBench 工作路径，分配不重叠端口范围，并生成各部署的最终启动脚本与 resolved.json。发现多个网络候选时由 Agent 根据任务通信需求核对，不盲选第一块网卡。绑定完成前 run.sh 拒绝启动。
+- **deploy**：循环每轮均调用。有效 READY 服务跳过部署和冒烟；需要启动时再次检查即时资源，创建本任务容器，执行已审阅的启动命令并等待健康检查。默认冒烟仅一次 curl 非流式真实推理，保存请求、响应及服务身份。
+- **evaluate**：每次执行一个标准 case，默认先重置缓存再按目标预热；从该 case 生成负载和配置，核验原始请求、输出长度及独立的实测前缀指标。客户端在结束或异常时清理，尝试与结果按 case 分别记录。
+- **finalize**：每个 case 核验客户端/临时链接释放并应用服务策略；整组任务结束另做任务级收尾，逐个处理已登记部署，即使某一释放失败也检查其他部署。释放失败单独报告，不能被测量通过覆盖。
 
-状态与释放边界见 [生命周期说明](references/service-lifecycle.md)。每次重试前核验客户端已退出、临时链接已释放、服务身份仍有效；归属不明或残留状态未知时停止重试并上报。耗尽后报告该 case 失败；单 case 实现随即收尾，不包含下一 case 调度。实例变化使旧冒烟失效，不能仅凭 READY 字符串复用。
+run.sh 启动的是简单串行执行器。相同部署的连续 case 默认保留服务；切换部署时当前实现停止旧容器，再启动对应部署的独立容器。部署容器使用任务 job_id 的数字子编号，镜像探测容器使用 -000，均核验归属。暂不跨不同部署共享容器。
 
-## 实现边界与产物
+## 状态、重试与资源
 
-当前适配器为 `aisbench_prefix`，支持用户给定负载的前缀性能测试；预热和结果解析是该工具的约定。候选配方为 DSV4 P/D，配方负责模型相关启动参数，通用执行器负责容器、状态、锁、冒烟及清理。其他工具/模型先在值守阶段核验并适配，不能宣称未知组合已验证。
+见 [生命周期](references/service-lifecycle.md)。服务身份和部署摘要与 case 负载分离；修改并发不影响部署身份。容器级锁保护各执行单元，任务锁保护整个循环。case 重试预算相互独立，默认最多额外3次；失败耗尽上报后，仅在资源与服务状态允许时继续下一 case。部署重建使用新的服务尝试预算并保留历史。
 
-job_spec v2 每次只含一个 case、执行一轮。服务复用条件与清理策略已具备；跨 case 管理、精度评测、复杂故障分类、完整 Agent 与强弱模型复现留到后续。
+case 收尾将缓存标为待重置，下一 case 预热前实际重置并核验；首次 case 也执行重置。需要清理的模型进程启用 VLLM_SERVER_DEV_MODE=1；先确认各实例无运行/等待请求，再逐个直连 P/D 实例重置，全部返回 success=true 后才预热。失败使用现有 case 重试预算，详见生命周期。任务停止服务后不再多做缓存重置。归属不明、客户端清理未核验或中断状态未知时阻塞相关操作，执行适用的任务收尾，不盲目恢复。
 
-自动执行保存计划、脚本快照、状态转换、各 attempt 原始结果、错误与释放记录。只操作核实归属的本任务资源，保留共享镜像、权重与证据；不把归档要求强加给手动操作。仓库 `docs/` 只放设计与工程计划，本地日志、报告与归档放在代码仓库之外（本机 `D:/autobenchmark-local/logs/`），不纳入 Git。目标服务器的任务工作目录及其内部 logs/ 布局保持独立。
+## 边界与产物
+
+当前工具适配器为 aisbench_prefix，工具源码及必要数据随包存放在 assets/aisbench-prefix；每个 attempt 复制并应用已验证的退出码/指标记录适配。历史 DSV4 配方仅保留供 v2 回归，v3 不依赖 deployment.recipe。未知启动配置仍需有人值守审阅，不自动把任意 shell 脚本完整转译为安全命令。
+
+脚本不会自行通过 SSH 上传任务包；Agent 使用现有连接完成上传。精度、并行调度、跨部署容器复用、复杂中断恢复未实现。当前配置存储仅有 logs/config-storage-events.jsonl 埋点，记录标准化、绑定、部署验证和 case 结束，不建立配置数据库或检索服务。
+
+保留计划、现场绑定、脚本快照、阶段/状态日志、每个 case 的原始结果和释放记录。只操作本任务资源，保留共享镜像与权重。自动流程的归档要求不强加给手动操作。docs 只放设计与工程计划；本地产物在仓库外，本机使用 D:/autobenchmark-local/。

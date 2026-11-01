@@ -1,0 +1,35 @@
+{
+  "network_interface": "data0.3001",
+  "model_paths": {
+    "dsv4": "/mnt/share/weight/DeepSeek-V4-Flash-0731"
+  },
+  "paths": {
+    "shell_rc": "/root/.bashrc",
+    "ascend_env": "/usr/local/Ascend/ascend-toolkit/set_env.sh",
+    "atb_env": "/usr/local/Ascend/nnal/atb/set_env.sh",
+    "opapi": "/usr/local/Ascend/ascend-toolkit/latest/lib64/libopapi_nn.so",
+    "comm": "/etc/hixlep"
+  },
+  "mounts": [
+    {
+      "source": "/usr/local/Ascend/driver",
+      "target": "/usr/local/Ascend/driver",
+      "read_only": false
+    },
+    {
+      "source": "/usr/local/dcmi",
+      "target": "/usr/local/dcmi",
+      "read_only": false
+    },
+    {
+      "source": "/etc/hixlep",
+      "target": "/etc/hixlep",
+      "read_only": false
+    },
+    {
+      "source": "/etc/hccl_rootinfo.json",
+      "target": "/etc/hccl_rootinfo.json",
+      "read_only": false
+    }
+  ]
+}

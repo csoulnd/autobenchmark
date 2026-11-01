@@ -1,46 +1,56 @@
-# 最小case与推理服务状态
+# 串行 case 与服务生命周期
 
-这是 job_spec v2 单 case 执行器的状态约定。状态保存在 run_state.json，转换写入 logs/state-transitions.jsonl。先支持性能 case 串行，不实现并行测试。
+## 准备与循环
 
-## 状态与转换
+plan_run 固定 case 顺序并生成 run.sh；preflight 在有人值守时完成现场绑定。run.sh 开始后，每轮调用 deploy → evaluate → finalize。deploy 每次检查服务状态；调用该阶段不代表必须重新部署。
 
-| 当前状态 | 含义 | 下一步 |
-|---|---|---|
-| UNKNOWN | 尚未确认归属、实际配置或可用性 | 只读核验；不能直接复用或误杀 |
-| ABSENT / RELEASED | 未部署或已释放 | preflight后deploy |
-| DEPLOYING | 本任务部署进行中 | 等待确定结果，不重复启动 |
-| DEPLOYED | 服务已启动，尚无适用当前实例的冒烟成功记录 | 执行smoke；未指定策略用default |
-| READY | 当前实例配置匹配、冒烟有效且现场仍可用 | 可跳过deploy/smoke，取得锁后执行case |
-| TESTING | 当前case运行中 | 不启动另一性能case；结束后更新状态 |
-| FAILED | 部署/冒烟失败，或测试后服务不可用 | 记录原因；按重试边界处理，不直接复用 |
+服务状态保存在每个部署目录的 run_state.json，case 状态在其中的 cases[case_id] 单独记录。整组任务状态在 task-state.json，日志与结果按部署、case 和 attempt 分开。
 
-每个最小case开始前读取并核验状态，而不是只相信一个持久化字符串。复用判断至少包括归属、实际服务身份、模型/镜像及部署配置是否满足case、当前可用性和冒烟是否仍对应此实例。服务重启或影响服务的配置变化使原READY依据失效，需要重新验证；仅变更可由当前服务支持的负载不必重部署。
-
-默认流程为deploy → default smoke → test → 按策略释放/保留。已有有效READY服务时直接进入test。case失败不必然意味着服务失败：请求和临时状态清理后核验服务，可继续使用则回到READY，不可用则FAILED，无法确认则UNKNOWN。
-
-## 结束策略决定是否复用
-
-| 明确的结束策略 | 操作与状态 |
+| 状态 | 行为 |
 |---|---|
-| 保留服务 | 释放case客户端/临时资源，落实该case缓存要求；服务有效则READY |
-| 停止服务、保留容器 | 停止并核验本任务模型服务，服务RELEASED；保留容器对象和证据 |
-| 停止服务及容器 | 先结束case，再停止并核验服务及容器运行资源，状态RELEASED |
+| ABSENT / RELEASED | 检查即时资源后建立服务 |
+| DEPLOYING / DEPLOYED | 等待启动与默认冒烟，不重复启动 |
+| READY | 核验容器/进程身份与健康检查，匹配则跳过部署和冒烟 |
+| TESTING | 当前 case 执行中，不启动另一 case |
+| FAILED / UNKNOWN | 保留失败原因，按已实现的有限重试或收尾处理，不盲目复用 |
 
-最后一个case不自动改变策略。任务结束策略在有人值守阶段明确；停止运行资源不等于删除容器对象、共享镜像、权重或证据。只对核实归属的资源操作，释放后核验，再更新状态。
+服务摘要只包含部署与绑定内容，不包含并发、请求数等 case 负载。容器归属使用该部署摘要和实际身份核验；case 状态、结果和重试预算独立。服务重启后旧冒烟失效。
 
-此前六组DSV4性能测试恰好满足同一服务的复用条件，并明确最后停止服务及容器。这是一个策略实例，不是全架构固定流程。前缀缓存测试要隔离缓存；其他case是否清理、保留或预热缓存，由其测量定义决定。
+## 资源分层
 
-## 锁与失败后的下一case
+| 资源 | 当前策略 |
+|---|---|
+| case 客户端与进程组 | 测试结束/异常时结束，核验无活动成员；清理不明阻止下一 case |
+| case 临时配置和数据链接 | 只解除本 attempt 创建且归属明确的链接，结果与数据证据保留 |
+| 前缀缓存 | 首次及每个要求隔离的 case 预热前实际重置并核验；case 收尾标记 NEEDS_RESET，避免重复清理 |
+| 相同部署的服务 | 连续 case 默认保留有效 READY 实例 |
+| 部署切换 | 当前串行实现停止旧部署容器，使用下一部署的独立容器；不做跨部署容器共享 |
+| 任务结束 | 按 task_end 处理所有登记部署；一个释放失败不跳过其他部署，失败单独报告 |
 
-同一容器内的性能测试取得独占锁后才能修改AISBench临时配置/数据链接、重置缓存或发送负载。先取得锁，再复核服务状态，避免查询到执行之间状态变化。锁覆盖本case准备、测试及case清理，退出时释放；未取得锁不启动测试。服务状态文件不能替代锁。
+每个部署的容器以任务 job_id 的数字子编号命名。进程组登记在 service-processes.json；客户端身份、释放证据保存在各 attempt 的 client.json / cleanup.json。已完成结果保留，重复任务入口不会重新发送成功/失败终态 case 的请求，仍执行任务收尾。
 
-最大重试次数由job_spec给出，默认3。每次重试前确认上次客户端已结束，核验服务和必要的case隔离条件，并使用独立attempt产物。次数耗尽后报告失败并结束当前case；当前只执行单 case，耗尽后收尾；后续 case 管理再基于状态机扩展。当前case失败不能被下一case成功覆盖。
+## 锁、重试和失败
 
-首版不定义复杂故障分类与自动修复。不明确归属、残留状态或权限时保留原因并阻塞相关操作，不能为了继续下一case绕过检查。
+整组循环持有任务锁，各部署操作另持有容器锁。前缀重置、工具配置与负载都在锁内执行。不是并行任务调度器，也不自动抢占其他用户资源。
 
+部署和 case 运行异常默认最多额外重试3次。case 预算按 case_id 分离；显式释放后重新建立服务时记录新的部署尝试批次。重试前核验服务身份、客户端清理及缓存隔离条件。耗尽后当前 case 失败保留；能安全继续时执行下一个 case，不能以后一 case 成功覆盖前面的失败。
 
-## 运行记录位置
+遇到客户端清理不明或未知状态，停止相关循环并进入适用的任务收尾。中断后仍为 RUNNING 的 case 不自动恢复，避免重放未知请求。服务与容器停止不删除共享镜像、权重或历史证据。
 
-job 级：run_state.json 的 container_id / image_id 与 releases。service 级：service-processes.json 记录本任务进程组 PID 和启动标识，smoke_identity 绑定容器启动时间与进程身份。case 级：每个 attempt 的 client.json、cleanup.json 和 summary.json 记录客户端、临时链接释放与结果。状态和证据按层级保留，避免另建与状态机重复的资源框架。
+## 配置存储埋点
 
-部署运行异常与测试运行异常各按 execution.max_retries 有限重试；配置或归属错误不盲目重试。部署重试前停止并核验本任务容器，保留该次日志；测试重试前核验客户端清理及服务身份。服务启动/冒烟与 case 尝试分别记录，正式测试正常通过时不增加重复请求。
+logs/config-storage-events.jsonl 记录 task_normalized、bindings_resolved、deployment_verified、case_finished，附任务/部署/case 标识和必要摘要。storage 固定标为 not_implemented；没有配置库写入、版本管理或自动匹配。
+
+## Prefix Cache 清理的执行边界
+
+缓存属于 case 隔离资源，服务可以继续复用。case finalize 标记 NEEDS_RESET；下一次 evaluate 的 case_runner 在预热和正式客户端启动之前调用 cache_reset.reset_instances，首次 case 和每次重试同样执行。任务结束停止服务时不再重复请求重置接口。
+
+- 收集启动配置时，为需要 reset 的每个 vLLM 模型进程设置 commands[].env.VLLM_SERVER_DEV_MODE="1"，模板在 bootstrap 之后导出该环境变量。保留已审阅的 Prefix Caching 参数；不为实现清理而关闭缓存。现有 DSV4 P/D 配方已启用该变量。
+- service.reset_ports 列出全部需清理的独立模型实例动态端口。PD 场景包括 P 和 D，多个实例逐一列出；纯 D 列出 D。不要默认填 Proxy 端口，也不要套用固定端口号。
+- 在本任务独占锁与服务身份核验下，先读取全部实例 /metrics，核验 running/waiting 请求数均为零（含各 DP 标签）。指标缺失、不合法或仍忙则本次尝试失败；空闲快照不等于异步 KV 传输已结束，仍以 reset 返回值为准。
+- 逐实例 POST /reset_prefix_cache，不传强制终止运行请求参数。必须 HTTP 成功且 JSON success 严格为 true，才进入预热。false、非 JSON、HTTP 错误或超时均阻止本次测试；记录其余实例结果，复用 case 最多额外3次的重试预算，不新增嵌套重试。
+- 每个 attempt 保存 cache-reset.json、空闲指标、原始响应或 HTTP 错误。失败记录不会被后续成功覆盖。404 需核对运行版本与 Dev Mode，不能当成已清理；接口返回空响应的版本需要单独核验适配，不能仅凭 HTTP 200 放行。
+
+此动作只证明各实例本地 Prefix Cache 重置得到确认，不保证全程零命中率，也不声称清除了外部 connector 缓存。当前不自动添加 reset_external 或调整 Hybrid 模型兼容性配置。Dev Mode 只对已授权的本任务测试服务启用。
+
+官方接口参考：[vLLM reset_prefix_cache](https://docs.vllm.ai/en/latest/api/vllm/entrypoints/serve/dev/cache/api_router/)。接口明确区分本地和可选外部缓存，并说明在运行请求或异步传输持有块时可能返回 false。

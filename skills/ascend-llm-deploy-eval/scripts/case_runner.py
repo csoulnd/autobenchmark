@@ -9,11 +9,14 @@ import time
 import urllib.request
 from service_process import members,ticks
 from validate_case import validate
+from cache_reset import reset_instances
 
 
 def run(root,folder):
-    spec=json.loads((root/'job_spec.json').read_text())
-    case=spec['benchmark']['case']; service=json.loads((root/'scripts/service.json').read_text())
+    spec_path=root/'resolved.json' if (root/'resolved.json').exists() else root/'job_spec.json'
+    spec=json.loads(spec_path.read_text())
+    case=json.loads((folder/'case.json').read_text()) if (folder/'case.json').exists() else spec['benchmark']['case']
+    service=json.loads((root/'scripts/service.json').read_text())
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
     def http(port,path,method='GET'):
         with opener.open(urllib.request.Request(f'http://127.0.0.1:{port}{path}',method=method),timeout=30) as r:
@@ -38,10 +41,7 @@ def run(root,folder):
     process=None; errors=[]; result=None; failure=None; started=time.monotonic()
     try:
         if case['reset_cache']:
-            for port in service['reset_ports']:
-                response=http(port,'/reset_prefix_cache','POST')
-                (folder/f'reset-{port}-0.json').write_text(response)
-                if json.loads(response).get('success') is not True: raise RuntimeError('Cache reset busy or failed')
+            reset_instances(folder, service['reset_ports'], http)
         for port in service['reset_ports']:
             (folder/f'metrics-{port}-before.txt').write_text(http(port,'/metrics'))
         argv=['python3','aisbench_test.py','--input_len',str(case['input_tokens']),'--output_len',str(case['output_tokens']),

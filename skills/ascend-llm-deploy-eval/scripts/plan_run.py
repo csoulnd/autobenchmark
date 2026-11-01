@@ -1,4 +1,4 @@
-"""Plan one case. Fill defaults, validate inputs, and snapshot selected recipe."""
+"""Freeze a serial task (or legacy case), fill defaults, and snapshot execution code."""
 import argparse
 import copy
 import json
@@ -22,13 +22,23 @@ def normalize(spec):
     e=s.setdefault('execution',{})
     for k,v in {'smoke':'default','max_retries':3,'startup_timeout_seconds':1800,'smoke_timeout_seconds':240}.items():
         e.setdefault(k,v)
+    if s.get('schema_version')=='3.0':
+        s.setdefault('cleanup',{'after_case':'keep_service','task_end':'stop_container'})
+        for case in s.get('cases',[]):
+            for k,v in {'formal_requests':case['concurrency']*4,'prefix_num':1,'seed':1,
+                        'request_rate':0,'warmup':True,'reset_cache':True,'timeout_seconds':5400}.items():
+                case.setdefault(k,v)
     return s
 
 
 def validate(spec):
     from jsonschema import Draft202012Validator
-    errors=[f'{e.json_path}: {e.message}' for e in Draft202012Validator(load_json(PACKAGE/'schemas/job_spec.schema.json')).iter_errors(spec)]
+    filename='job_spec.schema.json' if spec.get('schema_version')=='3.0' else 'job_spec.v2.schema.json'
+    errors=[f'{e.json_path}: {e.message}' for e in Draft202012Validator(load_json(PACKAGE/'schemas'/filename)).iter_errors(spec)]
     if errors: return errors
+    if spec['schema_version']=='3.0':
+        from task_runtime import validate_task
+        return validate_task(spec)
     s=spec; c=s['benchmark']['case']
     if s['target']['container']!=s['job_id']: errors.append('Container must equal job_id')
     root=PurePosixPath(s['target']['work_dir'])
@@ -50,6 +60,8 @@ def plan(spec,root):
     if errors: raise ValueError('; '.join(errors))
     if s['state']!='ready': raise ValueError('Draft requires attended resolution')
     result={'job_spec':s,'job_spec_sha256':digest(s),'status':'PLANNED','runtime_verified':False}
+    if s['schema_version']=='3.0':
+        result['sequence']=[{'case_id':c['id'],'deployment_id':c['deployment_id']} for c in s['cases']]
     if (root/'plan.json').exists() and load_json(root/'plan.json')!=result:
         raise ValueError('Existing plan differs; use a new job_id')
     root.mkdir(parents=True,exist_ok=True)
@@ -58,6 +70,13 @@ def plan(spec,root):
     # Preserve the complete executable package used by this job.
     if not (root/'skill-snapshot').exists():
         shutil.copytree(PACKAGE,root/'skill-snapshot',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+    if s['schema_version']=='3.0':
+        # Relative snapshot entry makes the generated task package transferable.
+        (root/'run.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\n'
+            'RUN_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"\n'
+            'exec python3 "$RUN_DIR/skill-snapshot/scripts/run_task.py" --run-dir "$RUN_DIR" "$@"\n',encoding='utf-8',newline='\n')
+        from task_runtime import storage_event
+        storage_event(root,'task_normalized',task_id=s['job_id'],plan_sha256=result['job_spec_sha256'])
     return result
 
 
@@ -67,7 +86,7 @@ def main():
     try:
         if not a.run_dir.is_absolute() or a.job_spec is None: raise ValueError('Absolute run-dir and --job-spec required')
         plan(load_json(a.job_spec),a.run_dir)
-        print(json.dumps({'stage':'plan_run','status':'PLANNED','message':'Single-case plan saved; defaults recorded','artifacts':[str(a.run_dir/'plan.json')]}))
+        print(json.dumps({'stage':'plan_run','status':'PLANNED','message':'Plan saved; defaults and execution order recorded','artifacts':[str(a.run_dir/'plan.json')]}))
         return 0
     except Exception as exc:
         print(json.dumps({'stage':'plan_run','status':'BLOCKED','message':str(exc),'artifacts':[]})); return 2

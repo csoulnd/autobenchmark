@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import time
 from preflight import check
-from stage_runtime import command,digest,entry,http,inspect_owned,read_plan,ready,save,service_identity,state,transition,update
+from stage_runtime import command,digest,entry,http,inspect_owned,read_plan,ready,save,service_identity,state,transition,update,ownership_digest
 
 
 def deploy_once(root):
@@ -24,7 +24,7 @@ def deploy_once(root):
         cid=c['Id']
     else:
         args=['docker','run','-d','--name',s['target']['container'],'--label','benchmark.job_id='+s['job_id'],
-              '--label','benchmark.spec_sha256='+digest(s),'--net=host','--shm-size='+s['container']['shm_size']]
+              '--label','benchmark.spec_sha256='+ownership_digest(s),'--net=host','--shm-size='+s['container']['shm_size']]
         if s['container']['privileged']: args+=['--privileged']
         for d in s['container']['devices']: args+=['--device',d]
         for m in s['container']['mounts']: args+=['-v',m['source']+':'+m['target']+(':ro' if m['read_only'] else '')]
@@ -39,7 +39,8 @@ def deploy_once(root):
         try:
             service_identity(s,root)
             for url in service['health_urls']: http(url)
-            http(service['endpoint']+'/healthcheck')
+            if service.get('gateway_health_url'):
+                http(service['gateway_health_url'])
             break
         except Exception:
             if time.monotonic()>=deadline:
@@ -78,6 +79,10 @@ def deploy(root):
         return {'status':'PASSED','message':'READY identity verified; deploy and smoke skipped','artifacts':[]}
     # Only bounded operational retries; invalid input/ownership is never replayed.
     limit=1+s['execution']['max_retries']
+    # A deliberate release starts a new service generation and retry budget.
+    if state(root)['service']=='RELEASED' and state(root).get('deploy_attempts'):
+        history=state(root).get('deploy_history',[])+[state(root)['deploy_attempts']]
+        update(root,deploy_history=history,deploy_attempts=[])
     attempts=state(root).get('deploy_attempts',[])
     for number in range(len(attempts)+1,limit+1):
         attempt={'attempt':number,'status':'RUNNING'}
