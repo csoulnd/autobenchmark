@@ -13,9 +13,9 @@ from cache_reset import reset_instances
 
 
 def run(root,folder):
-    spec_path=root/'resolved.json' if (root/'resolved.json').exists() else root/'job_spec.json'
+    spec_path=root/'resolved.json'
     spec=json.loads(spec_path.read_text())
-    case=json.loads((folder/'case.json').read_text()) if (folder/'case.json').exists() else spec['benchmark']['case']
+    case=json.loads((folder/'case.json').read_text())
     service=json.loads((root/'scripts/service.json').read_text())
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
     def http(port,path,method='GET'):

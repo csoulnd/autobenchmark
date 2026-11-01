@@ -3,7 +3,7 @@
   "type": "object",
   "required": [
     "service",
-    "attempts",
+    "cases",
     "releases"
   ],
   "properties": {
@@ -19,42 +19,8 @@
         "RELEASED"
       ]
     },
-    "attempts": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": [
-          "attempt",
-          "folder",
-          "status"
-        ],
-        "properties": {
-          "attempt": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "folder": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "RUNNING",
-              "PASSED",
-              "FAILED"
-            ]
-          }
-        }
-      }
-    },
     "releases": {
       "type": "array"
-    },
-    "case_status": {
-      "enum": [
-        "RUNNING",
-        "PASSED",
-        "FAILED"
-      ]
     },
     "container_id": {
       "type": "string"
@@ -67,6 +33,53 @@
         "object",
         "null"
       ]
+    },
+    "cases": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status",
+          "attempts"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "NOT_RUN",
+              "RUNNING",
+              "PASSED",
+              "FAILED"
+            ]
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "attempt",
+                "folder",
+                "status"
+              ],
+              "properties": {
+                "attempt": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "folder": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "RUNNING",
+                    "PASSED",
+                    "FAILED"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

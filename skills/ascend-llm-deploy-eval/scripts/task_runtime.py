@@ -150,7 +150,7 @@ def run_task(root):
                 if deployment['status'] == 'PASSED':
                     storage_event(root, 'deployment_verified', deployment_id=dep_id,
                                   service_fingerprint=execution['service_fingerprint'])
-                    result = invoke(child, 'evaluate', lambda: evaluate(child, case, finish_case=False))
+                    result = invoke(child, 'evaluate', lambda: evaluate(child, case))
                 else:
                     result = deployment
                 outcome = {'status': result['status'], 'deployment_id': dep_id, 'result': result}

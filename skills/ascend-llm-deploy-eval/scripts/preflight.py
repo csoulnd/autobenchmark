@@ -3,12 +3,13 @@ import json
 from pathlib import Path
 import re
 import socket
-from stage_runtime import command, entry, read_plan, ready, recipe, save, state
+from stage_runtime import command, entry, read_plan, ready, save, state
 
 
 def check(root):
     s=read_plan(root)
-    service=recipe(s).render(s,root/'scripts')
+    service=s['deployment']['service']
+    save(root/'scripts/service.json',service)
     evidence={'image_id':json.loads(command(['docker','image','inspect',s['target']['image']]))[0]['Id']}
     save(root/'preflight-evidence.json',evidence)
     for mount in s['container']['mounts']:
@@ -49,4 +50,4 @@ def check(root):
     save(root/'preflight-evidence.json',evidence)
     return {'status':'PASSED','message':'Selected dependencies and service/resources verified','artifacts':[str(root/'preflight-evidence.json')]}
 
-if __name__=='__main__': raise SystemExit(entry('preflight',check))
+if __name__=='__main__': raise SystemExit(entry('preflight'))

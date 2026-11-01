@@ -1,4 +1,4 @@
-"""Start the selected recipe; default smoke is one real curl inference."""
+"""Start the resolved deployment; default smoke is one real curl inference."""
 import json
 from pathlib import Path
 import shutil
@@ -108,4 +108,4 @@ def deploy(root):
             raise
     raise RuntimeError('Deployment exhausted retry budget; inspect attempt evidence')
 
-if __name__=='__main__': raise SystemExit(entry('deploy',deploy))
+if __name__=='__main__': raise SystemExit(entry('deploy'))

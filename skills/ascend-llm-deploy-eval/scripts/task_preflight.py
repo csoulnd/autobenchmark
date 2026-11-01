@@ -130,7 +130,7 @@ def create_execution(spec, dep, root, index, bindings, network, port_bases, port
                'paths': dict(bindings.get('paths', {})), 'run_dir': str(child), 'task_dir': str(root)}
     if '{{paths.proxy_program}}' in json.dumps(dep['commands']):
         proxy=child/'scripts/proxy.py'
-        shutil.copy2(PACKAGE/'assets/dsv4-verified/load_balance_proxy_server_example.py',proxy)
+        shutil.copy2(PACKAGE/'assets/pd-proxy/load_balance_proxy_server_example.py',proxy)
         context['paths']['proxy_program']=str(proxy)
     commands = []
     for item in dep['commands']:
@@ -174,13 +174,12 @@ def create_execution(spec, dep, root, index, bindings, network, port_bases, port
     fingerprint = digest({'image': image, 'model': model, 'container': container,
                           'service': service, 'scripts': fingerprints})
     job_id = spec['job_id']+f'-{index:03}'
-    first_case = next(c for c in spec['cases'] if c['deployment_id'] == dep['id'])
     execution = {'schema_version': 'resolved-1', 'job_id': job_id,
         'target': {'host': spec['target']['host'], 'container': job_id, 'work_dir': str(child), 'image': image},
         'model': model, 'container': container, 'deployment': {'service': service},
         'service_fingerprint': fingerprint,
         'benchmark': {'adapter': 'aisbench_prefix', 'tool_dir': str(PACKAGE/'assets/aisbench-prefix'),
-                      'aisbench_work_path': tools['aisbench_work_path'], 'prefill_dp': dep['prefill_dp'], 'case': first_case},
+                      'aisbench_work_path': tools['aisbench_work_path'], 'prefill_dp': dep['prefill_dp']},
         'execution': spec['execution'], 'cleanup': spec['cleanup']}
     save(child/'resolved.json', execution)
     save(child/'plan.json', {'execution_spec': execution, 'execution_sha256': digest(execution)})

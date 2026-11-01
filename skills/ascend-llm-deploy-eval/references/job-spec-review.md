@@ -1,6 +1,6 @@
 # 任务配置与现场绑定
 
-当前主格式是 [job_spec v3](../schemas/job_spec.schema.json)，参考 [串行任务示例](../examples/job_spec.serial.json)。v2 示例和 job_spec.v2.schema.json 仅保留原首版单 case 回归，不扩展旧字段体系。
+当前主格式是 [job_spec v3](../schemas/job_spec.schema.json)，参考 [串行任务示例](../examples/job_spec.serial.json)。只接受 v3；旧格式会被拒绝，不自动迁移。
 
 ## 两种记录的职责
 

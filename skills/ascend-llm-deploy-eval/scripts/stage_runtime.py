@@ -3,7 +3,6 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -33,36 +32,18 @@ def save(path,value):
 
 def read_plan(root):
     plan=json.loads((root/'plan.json').read_text(encoding='utf-8-sig'))
-    s=plan.get('execution_spec',plan.get('job_spec'))
-    if digest(s)!=plan.get('execution_sha256',plan.get('job_spec_sha256')):
+    s=plan['execution_spec']
+    if s.get('schema_version') != 'resolved-1':
+        raise ValueError('Expected v3 preflight execution artifact')
+    if digest(s)!=plan['execution_sha256']:
         raise ValueError('Plan hash mismatch')
     if root.resolve()!=Path(s['target']['work_dir']).resolve():
         raise ValueError('Run directory differs from target work_dir')
     return s
 
 
-def recipe(spec):
-    if 'service' in spec['deployment']:
-        return ResolvedService()
-    path=(PACKAGE/spec['deployment']['recipe']/'render.py').resolve()
-    if not path.is_relative_to((PACKAGE/'assets').resolve()):
-        raise ValueError('Recipe outside package')
-    module_spec=importlib.util.spec_from_file_location('selected_recipe',path)
-    module=importlib.util.module_from_spec(module_spec); module_spec.loader.exec_module(module)
-    return module
-
-
-class ResolvedService:
-    """Consume preflight bindings; no configuration catalog or recipe lookup."""
-    def render(self, spec, output):
-        service=spec['deployment']['service']
-        output.mkdir(parents=True,exist_ok=True)
-        save(output/'service.json',service)
-        return service
-
-
 def ownership_digest(spec):
-    return spec.get('service_fingerprint') or digest(spec)
+    return spec['service_fingerprint']
 
 
 def case_state(root,case_id):
@@ -73,15 +54,13 @@ def update_case(root,case_id,**values):
     data=state(root)
     current=data.setdefault('cases',{}).setdefault(case_id,{'status':'NOT_RUN','attempts':[]})
     current.update(values)
-    # Preserve v2 summary readers; the authoritative data is keyed by case ID.
-    data.update(case_status=current['status'],attempts=current['attempts'],active_case=case_id)
     save(root/'run_state.json',data)
     return current
 
 
 def state(root):
     path=root/'run_state.json'
-    return json.loads(path.read_text()) if path.exists() else {'service':'ABSENT','attempts':[],'releases':[]}
+    return json.loads(path.read_text()) if path.exists() else {'service':'ABSENT','cases':{},'releases':[]}
 
 
 def update(root,**values):
@@ -168,7 +147,7 @@ def record(root,stage,operation):
     return 0 if result['status']=='PASSED' else 2
 
 
-def entry(stage,operation):
+def entry(stage):
     p=argparse.ArgumentParser(); p.add_argument('--run-dir',type=Path,required=True)
     p.add_argument('--bindings',type=Path)
     args=p.parse_args()
@@ -176,11 +155,6 @@ def entry(stage,operation):
         print(json.dumps({'stage':stage,'status':'BLOCKED','message':'Absolute run-dir and plan required','artifacts':[]}))
         return 2
     def run():
-        plan=json.loads((args.run_dir/'plan.json').read_text())
-        if plan.get('job_spec',{}).get('schema_version')=='3.0':
-            from task_runtime import stage_entry
-            return stage_entry(stage,args.run_dir,args.bindings)
-        spec=read_plan(args.run_dir)
-        with locked(spec):
-            return operation(args.run_dir)
+        from task_runtime import stage_entry
+        return stage_entry(stage,args.run_dir,args.bindings)
     return record(args.run_dir,stage,run)

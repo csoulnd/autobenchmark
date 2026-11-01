@@ -5,15 +5,13 @@ import shutil
 import subprocess
 import time
 from deploy import deploy
-from finalize import release
 from prepare_benchmark_tool import prepare
 from stage_runtime import (entry, read_plan, ready, save, service_identity, state,
                            transition, case_state, update_case)
 
 
-def evaluate(root, case=None, finish_case=True):
+def evaluate(root, case):
     spec = read_plan(root)
-    case = case or spec['benchmark']['case']
     case_id = case['id']
     data = case_state(root, case_id)
     if data['status'] == 'PASSED':
@@ -65,8 +63,6 @@ def evaluate(root, case=None, finish_case=True):
         update_case(root, case_id, status=item['status'], attempts=attempts, safe_to_continue=safe)
         transition(root, 'READY' if unchanged else 'UNKNOWN', cache_state='NEEDS_RESET')
         if passed:
-            if finish_case:
-                release(root, spec['cleanup']['after_case'], 'case')
             return {'status': 'PASSED', 'message': f'{case_id} passed on attempt {attempt}',
                     'artifacts': [str(folder/'validated.json')]}
         if not safe or not case.get('reset_cache', True):
@@ -75,10 +71,8 @@ def evaluate(root, case=None, finish_case=True):
                           'attempt': attempt, 'max_attempts': limit, 'error': summary.get('error')}), flush=True)
         if attempt < limit:
             time.sleep(3)
-    if finish_case:
-        release(root, spec['cleanup']['after_case'], 'case')
     raise RuntimeError('Case exhausted retry budget; evidence retained')
 
 
 if __name__ == '__main__':
-    raise SystemExit(entry('evaluate', evaluate))
+    raise SystemExit(entry('evaluate'))

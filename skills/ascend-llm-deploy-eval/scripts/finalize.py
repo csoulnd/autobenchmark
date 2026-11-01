@@ -47,19 +47,4 @@ def release(root,policy,scope):
     return evidence
 
 
-def finalize(root):
-    s=read_plan(root)
-    try: released=release(root,s['cleanup']['task_end'],'job')
-    except Exception as exc:
-        data=state(root); data['releases'].append({'scope':'job','status':'release_failed','error':repr(exc)})
-        save(root/'run_state.json',data); raise
-    data=state(root)
-    result={'job_id':s['job_id'],'case':s['benchmark']['case'],'evaluation_status':data.get('case_status','NOT_RUN'),
-        'attempts':data['attempts'],'release':released,'service_state':data['service'],
-        'shared_images_and_weights_retained':True,'container_retained':True}
-    stages=root/'logs/stages.jsonl'
-    result['stage_failures']=[r for r in map(json.loads,stages.read_text().splitlines()) if r['status']=='FAILED'] if stages.exists() else []
-    save(root/'summary.json',result)
-    return {'status':'PASSED','message':'Cleanup policy applied and verified; evaluation status recorded separately','artifacts':[str(root/'summary.json')]}
-
-if __name__=='__main__': raise SystemExit(entry('finalize',finalize))
+if __name__=='__main__': raise SystemExit(entry('finalize'))

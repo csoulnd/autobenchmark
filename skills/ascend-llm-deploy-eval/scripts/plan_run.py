@@ -1,10 +1,10 @@
-"""Freeze a serial task (or legacy case), fill defaults, and snapshot execution code."""
+"""Freeze a serial task, fill defaults, and snapshot execution code."""
 import argparse
 import copy
 import json
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import shutil
-from stage_runtime import PACKAGE, digest, recipe, save
+from stage_runtime import PACKAGE, digest, save
 
 
 def load_json(path):
@@ -33,26 +33,11 @@ def normalize(spec):
 
 def validate(spec):
     from jsonschema import Draft202012Validator
-    filename='job_spec.schema.json' if spec.get('schema_version')=='3.0' else 'job_spec.v2.schema.json'
-    errors=[f'{e.json_path}: {e.message}' for e in Draft202012Validator(load_json(PACKAGE/'schemas'/filename)).iter_errors(spec)]
+    errors=[f'{e.json_path}: {e.message}' for e in Draft202012Validator(load_json(PACKAGE/'schemas/job_spec.schema.json')).iter_errors(spec)]
     if errors: return errors
-    if spec['schema_version']=='3.0':
-        from task_runtime import validate_task
-        return validate_task(spec)
-    s=spec; c=s['benchmark']['case']
-    if s['target']['container']!=s['job_id']: errors.append('Container must equal job_id')
-    root=PurePosixPath(s['target']['work_dir'])
-    if root.name!=s['job_id'] or '..' in root.parts: errors.append('work_dir must end with job_id and contain no traversal')
-    mounts=s['container']['mounts']
-    for path in [s['target']['work_dir'],s['model']['path']]:
-        if not any(m['source']==m['target'] and PurePosixPath(path).is_relative_to(PurePosixPath(m['source'])) for m in mounts):
-            errors.append('Required same-path mount absent: '+path)
-    if c['input_tokens']+c['output_tokens']>s['model']['max_model_len']: errors.append('Context limit exceeded')
-    if c['formal_requests']<c['concurrency']: errors.append('Requests cannot reach requested concurrency')
-    if s['state']=='ready' and s['unresolved']: errors.append('Ready spec contains unresolved items')
-    try: recipe(s).validate(s)
-    except Exception as exc: errors.append('Recipe: '+str(exc))
-    return errors
+    from task_runtime import validate_task
+    return validate_task(spec)
+
 
 
 def plan(spec,root):

@@ -45,7 +45,7 @@ logs/config-storage-events.jsonl 记录 task_normalized、bindings_resolved、de
 
 缓存属于 case 隔离资源，服务可以继续复用。case finalize 标记 NEEDS_RESET；下一次 evaluate 的 case_runner 在预热和正式客户端启动之前调用 cache_reset.reset_instances，首次 case 和每次重试同样执行。任务结束停止服务时不再重复请求重置接口。
 
-- 收集启动配置时，为需要 reset 的每个 vLLM 模型进程设置 commands[].env.VLLM_SERVER_DEV_MODE="1"，模板在 bootstrap 之后导出该环境变量。保留已审阅的 Prefix Caching 参数；不为实现清理而关闭缓存。现有 DSV4 P/D 配方已启用该变量。
+- 收集启动配置时，为需要 reset 的每个 vLLM 模型进程设置 commands[].env.VLLM_SERVER_DEV_MODE="1"，模板在 bootstrap 之后导出该环境变量。保留已审阅的 Prefix Caching 参数；不为实现清理而关闭缓存。当前部署示例已为 P/D 模型进程启用该变量。
 - service.reset_ports 列出全部需清理的独立模型实例动态端口。PD 场景包括 P 和 D，多个实例逐一列出；纯 D 列出 D。不要默认填 Proxy 端口，也不要套用固定端口号。
 - 在本任务独占锁与服务身份核验下，先读取全部实例 /metrics，核验 running/waiting 请求数均为零（含各 DP 标签）。指标缺失、不合法或仍忙则本次尝试失败；空闲快照不等于异步 KV 传输已结束，仍以 reset 返回值为准。
 - 逐实例 POST /reset_prefix_cache，不传强制终止运行请求参数。必须 HTTP 成功且 JSON success 严格为 true，才进入预热。false、非 JSON、HTTP 错误或超时均阻止本次测试；记录其余实例结果，复用 case 最多额外3次的重试预算，不新增嵌套重试。

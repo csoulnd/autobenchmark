@@ -40,7 +40,7 @@ case 收尾将缓存标为待重置，下一 case 预热前实际重置并核验
 
 ## 边界与产物
 
-当前工具适配器为 aisbench_prefix，工具源码及必要数据随包存放在 assets/aisbench-prefix；每个 attempt 复制并应用已验证的退出码/指标记录适配。历史 DSV4 配方仅保留供 v2 回归，v3 不依赖 deployment.recipe。未知启动配置仍需有人值守审阅，不自动把任意 shell 脚本完整转译为安全命令。
+当前工具适配器为 aisbench_prefix，工具源码及必要数据随包存放在 assets/aisbench-prefix；每个 attempt 复制并应用已验证的退出码/指标记录适配。仅接受 job_spec v3，部署来自规范化命令与现场绑定，不加载旧 recipe。PD 代理与许可证放在 assets/pd-proxy。未知启动配置仍需有人值守审阅，不自动把任意 shell 脚本完整转译为安全命令。
 
 脚本不会自行通过 SSH 上传任务包；Agent 使用现有连接完成上传。精度、并行调度、跨部署容器复用、复杂中断恢复未实现。当前配置存储仅有 logs/config-storage-events.jsonl 埋点，记录标准化、绑定、部署验证和 case 结束，不建立配置数据库或检索服务。
 

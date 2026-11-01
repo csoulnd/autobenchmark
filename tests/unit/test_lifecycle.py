@@ -8,11 +8,14 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'skills/ascend-llm-deploy-eval/scripts'))
 import evaluate
 import stage_runtime as runtime
-from plan_run import load_json
+from plan_run import normalize
+from test_serial_task import fixture
 
 class LifecycleTests(unittest.TestCase):
     def exercise(self,success_at=None,safe=True):
-        spec=load_json(runtime.PACKAGE/'examples/job_spec.single-case.json')
+        task=normalize(fixture())
+        case=task['cases'][0]
+        spec={'execution':task['execution'],'benchmark':{'tool_dir':'unused'}}
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
             for name in ['scripts','logs','results']:(root/name).mkdir()
@@ -24,22 +27,22 @@ class LifecycleTests(unittest.TestCase):
                 runtime.save(folder/'cleanup.json',{'released':safe})
                 runtime.save(folder/'summary.json',{'status':'PASSED' if passed else 'FAILED','error':None if passed else 'test failure'})
                 return SimpleNamespace(returncode=0 if passed else 2)
-            with patch.object(evaluate,'read_plan',return_value=spec),patch.object(evaluate,'ready',return_value=True),patch.object(evaluate,'service_identity',return_value={'identity':1}),patch.object(evaluate,'prepare'),patch.object(evaluate,'release'),patch.object(evaluate.subprocess,'run',side_effect=attempt),patch.object(evaluate.time,'sleep'):
+            with patch.object(evaluate,'read_plan',return_value=spec),patch.object(evaluate,'ready',return_value=True),patch.object(evaluate,'service_identity',return_value={'identity':1}),patch.object(evaluate,'prepare'),patch.object(evaluate.subprocess,'run',side_effect=attempt),patch.object(evaluate.time,'sleep'):
                 if success_at:
-                    self.assertEqual(evaluate.evaluate(root)['status'],'PASSED')
+                    self.assertEqual(evaluate.evaluate(root,case)['status'],'PASSED')
                 else:
-                    with self.assertRaises((ValueError,RuntimeError)):evaluate.evaluate(root)
-            return calls,runtime.state(root)
+                    with self.assertRaises((ValueError,RuntimeError)):evaluate.evaluate(root,case)
+            return calls,runtime.case_state(root,case['id'])
     def test_four_attempts_total_and_evidence_retained(self):
         calls,state=self.exercise()
-        self.assertEqual(calls,[1,2,3,4]); self.assertEqual(state['case_status'],'FAILED')
+        self.assertEqual(calls,[1,2,3,4]); self.assertEqual(state['status'],'FAILED')
         self.assertEqual(len({a['folder'] for a in state['attempts']}),4)
     def test_retry_stops_on_success(self):
         calls,state=self.exercise(success_at=2)
-        self.assertEqual(calls,[1,2]); self.assertEqual(state['case_status'],'PASSED')
+        self.assertEqual(calls,[1,2]); self.assertEqual(state['status'],'PASSED')
     def test_unsafe_cleanup_not_retried(self):
         calls,state=self.exercise(safe=False)
-        self.assertEqual(calls,[1]); self.assertEqual(state['case_status'],'FAILED')
+        self.assertEqual(calls,[1]); self.assertEqual(state['status'],'FAILED')
     def test_stale_smoke_invalidates_ready(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'logs').mkdir()

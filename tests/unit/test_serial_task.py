@@ -54,8 +54,7 @@ class SerialTests(unittest.TestCase):
             calls.append((action,root.name))
             runtime.update(root,service='READY')
             return {'status':'PASSED','message':action,'artifacts':[]}
-        def evaluate(root,case,finish_case):
-            self.assertFalse(finish_case)
+        def evaluate(root,case):
             calls.append(('test',case['id']))
             failed=case['id']==failed_case
             runtime.update_case(root,case['id'],status='FAILED' if failed else 'PASSED',
@@ -134,7 +133,7 @@ class SerialTests(unittest.TestCase):
     def test_case_change_does_not_change_container_identity(self):
         self.preflight()
         execution=json.loads((self.root/'services/a/resolved.json').read_text())
-        changed=copy.deepcopy(execution); changed['benchmark']['case']['concurrency']=128
+        changed=copy.deepcopy(execution); changed['benchmark']['case']={'concurrency':128}
         self.assertEqual(runtime.ownership_digest(execution),runtime.ownership_digest(changed))
 
     def test_multiple_networks_require_a_specific_choice(self):
@@ -158,8 +157,9 @@ class CaseIsolationTests(unittest.TestCase):
     def test_exhausted_case_does_not_consume_next_case_budget(self):
         import evaluate
         from types import SimpleNamespace
-        spec=plan_run.load_json(runtime.PACKAGE/'examples/job_spec.single-case.json')
-        first=copy.deepcopy(spec['benchmark']['case']); first['id']='first'
+        task_spec=plan_run.normalize(fixture())
+        spec={'execution':task_spec['execution'],'benchmark':{'tool_dir':'unused'}}
+        first=copy.deepcopy(task_spec['cases'][0]); first['id']='first'
         second=copy.deepcopy(first); second['id']='second'
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
@@ -175,8 +175,8 @@ class CaseIsolationTests(unittest.TestCase):
             with patch.object(evaluate,'read_plan',return_value=spec),patch.object(evaluate,'ready',return_value=True), \
                  patch.object(evaluate,'service_identity',return_value={'instance':1}),patch.object(evaluate,'prepare'), \
                  patch.object(evaluate.subprocess,'run',side_effect=attempt),patch.object(evaluate.time,'sleep'),redirect_stdout(io.StringIO()):
-                with self.assertRaises(RuntimeError):evaluate.evaluate(root,first,finish_case=False)
-                self.assertEqual(evaluate.evaluate(root,second,finish_case=False)['status'],'PASSED')
+                with self.assertRaises(RuntimeError):evaluate.evaluate(root,first)
+                self.assertEqual(evaluate.evaluate(root,second)['status'],'PASSED')
             self.assertEqual(calls,[('first',f'attempt-{i:02}') for i in range(1,5)]+[('second','attempt-01')])
             self.assertEqual(runtime.case_state(root,'first')['status'],'FAILED')
             self.assertEqual(runtime.case_state(root,'second')['status'],'PASSED')
@@ -196,7 +196,7 @@ from stage_runtime import update,update_case
 def start(root):
  update(root,service='READY')
  return {'status':'PASSED','message':'fake service ready','artifacts':[]}
-def measure(root,case,finish_case=True):
+def measure(root,case):
  update_case(root,case['id'],status='PASSED',attempts=[{'attempt':1,'folder':'fake','status':'PASSED','cleanup':{'released':True}}],safe_to_continue=True)
  return {'status':'PASSED','message':'fake measured '+case['id'],'artifacts':[]}
 def release(root,policy,scope):
