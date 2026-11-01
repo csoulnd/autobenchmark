@@ -1,26 +1,58 @@
 # AutoBenchmark
 
-以 job_spec 引导有人值守的信息收集和现场预检，再自动串行执行部署、性能测试与收尾。用户自然语言描述服务器、部署和测试要求，由 Agent 转换成标准 case。
+以 job_spec 引导有人值守的信息收集、配置审阅和现场预检，随后由宿主机进程自动推进部署、性能测试与资源释放。用户自然语言描述模型、部署和负载，Agent 负责整理成标准任务。
 
-- [Skill 入口](skills/ascend-llm-deploy-eval/SKILL.md)：信息收集、五阶段执行方式和边界。
-- [任务示例](skills/ascend-llm-deploy-eval/examples/job_spec.serial.json)：v3 实例/连接拓扑、独立 case 与 sub_tasks；示例不是执行授权。
-- [现场绑定示例](skills/ascend-llm-deploy-eval/examples/bindings.example.json)：各节点 SSH 地址、工作目录、包路径、模型位置及挂载。
-- [生命周期](skills/ascend-llm-deploy-eval/references/service-lifecycle.md)：服务状态、独占锁、按 case 重试和分级释放。
-- `docs/` 只存设计与整体工程计划；`tests/` 存可复用检查。本地产物保存在仓库外，本机为 `D:/autobenchmark-local/`。
+## 文档入口
 
-Python 3.10+；规划依赖 jsonschema。现场执行需要 Linux、Docker、curl 和 npu-smi；AISBench 从镜像动态发现，前缀工具随 Skill 分发。
+- [Skill](skills/ascend-llm-deploy-eval/SKILL.md)：实际使用流程与能力边界。
+- [当前设计](docs/design.md)、[工程计划](docs/project-plan.md)、[决策记录](docs/decisions.md)。
+- [job_spec 示例](skills/ascend-llm-deploy-eval/examples/job_spec.serial.json)：分层部署、独立 case 和串行 sub_tasks。
+- [现场绑定](skills/ascend-llm-deploy-eval/examples/bindings.example.json)、[容器默认配置](skills/ascend-llm-deploy-eval/references/container-baseline.md)。
+- [整组执行](skills/ascend-llm-deploy-eval/references/group-execution.md)、[整组计划示例](skills/ascend-llm-deploy-eval/examples/group-plan.example.json)。
+- [生命周期](skills/ascend-llm-deploy-eval/references/service-lifecycle.md)、[Agent 监控](skills/ascend-llm-deploy-eval/references/task-monitoring.md)。
+
+## 当前执行方式
+
+单个 job_spec 内按 sub_tasks 串行执行。需要跨任务衔接时，在主节点宿主机启动 group_run.py：独立服务器上的单机任务可并行；依赖任务结束且资源释放核验通过后，自动启动后继双机任务。单机执行进程放本机宿主，多机执行进程放主节点宿主，模型服务仍在任务容器内。主进程与子任务脱离 SSH 会话运行，关闭观察终端不影响执行。
+
+五阶段保持 plan_run、preflight、deploy、evaluate、finalize。默认每 case 正式请求数=并发×4、运行1轮、最多额外重试3次；显式用户要求优先。同部署有效服务可复用，case 前重置缓存并预热，切换部署优先复用兼容容器；任务结束默认停止服务并删除任务容器，保留宿主产物、镜像与权重。
+
+容器默认使用 root、host 网络/PID、500g 共享内存、privileged、八卡及管理设备和完整默认挂载。bindings.mounts 按目标路径覆盖或追加，runtime.container 支持已建模的参数覆盖。缺失挂载来源时阻塞预检，不让 Docker 创建空目录替代配置文件。
+
+## 生成和提交
+
+Python 3.10+，规划依赖 jsonschema。现场需要 Linux、Docker、curl、npu-smi 和免密 SSH；AISBench 从镜像动态发现，前缀工具随 Skill 分发。
 
 ```sh
 python -m pip install -r skills/ascend-llm-deploy-eval/requirements.txt
 python -m unittest discover -s tests/unit -v
 python skills/ascend-llm-deploy-eval/scripts/plan_run.py --job-spec /input/job_spec.json --run-dir /work/JOB_ID
-# Agent 将任务目录上传至 Linux 协调端，并将同一版本 Skill 包上传至各节点后，在协调端执行：
+# 上传完整任务包及相同版本 Skill 后，在任务协调节点进行有人值守预检：
 python3 /work/JOB_ID/skill-snapshot/scripts/preflight.py --run-dir /work/JOB_ID --bindings /input/bindings.json
+# 单任务前台执行入口：
 bash /work/JOB_ID/run.sh
 ```
 
-plan_run 生成串行入口；preflight 动态绑定 IP、网卡、端口、路径并生成启动脚本。随后每个 sub_task 经过 deploy → evaluate → finalize：同部署的有效服务默认复用，切换部署默认只停止旧服务并复用兼容容器，任务结束默认停止服务并删除本任务容器。默认一次 curl 冒烟，异常最多额外重试3次；安全条件不满足时停止继续测试并收尾。
+需要后台整组执行时，对每个子任务完成上述规划与预检，填写独立的 group-plan.json，之后在主节点执行（不要先运行子任务 run.sh）：
 
-配置存储暂只有标准化、现场绑定、部署验证和 case 结束事件，不实现配置库或检索。任意脚本转为规范命令仍需 Agent 审阅；包上传由 Agent 完成；执行器通过 SSH 调用固定节点脚本。没有精度、phase 并行屏障或复杂中断恢复。仅接受 job_spec v3，不提供旧格式兼容。
+```sh
+python3 /path/to/skill/scripts/group_run.py --start --plan /input/group-plan.json --run-dir /work/GROUP_ID
+```
 
-当前拓扑路径支持单机混部、单机 PD 和双机 PD 的结构；PD 首版限定一个 P、一个 D、一个 proxy。实际验证结果与环境限制保存在仓库外报告中，不能仅凭 Schema 或模拟检查认定新拓扑已完成真实压测。完整 Agent 与强弱模型复现仍在后续阶段。
+Agent 在提交前给出真实主节点和目录的观察命令，例如：
+
+```sh
+ssh -t user@main.example 'python3 /work/GROUP_ID/skill-snapshot/scripts/watch_events.py --run-dir /work/GROUP_ID'
+```
+
+事件按 subcase、阶段和 attempt 记录；终端显示北京时间并精确到秒，原始事件保留 UTC。远端每30秒轮询属于普通 Python 执行，不调用模型；当前聊天的 Agent 兜底监控默认每60分钟一次，正常静默。监控不可用时明确告知；默认通知可能延迟约一小时，应用离线可能更久。
+
+## 实现与验证边界
+
+- 仅接受 job_spec v3；支持混部及一个 P、一个 D、一个 proxy 的单机/双机 PD 结构。
+- 整组并发以互不重叠的服务器为边界；所有 bindings 必须对同一主机使用统一地址。不支持同机分卡并发、自动别名归一或 job_spec 内 phase 并行屏障。
+- 进程退出不等于成功。case 结果和全部登记节点释放记录共同决定终态；测量失败但释放通过可以继续后继，整组仍记录失败。
+- 未实现多 P/D（如3P1D）、精度、配置库、复杂故障恢复和主机重启后的自动恢复。配置存储仅有埋点。
+- 截至2026-11-01，Linux 72项检查通过；真实 SSH、后台进程、自动后继启动和终端观察已用合成任务验证。该验证没有启动模型或容器，不代表新版整组性能测试已通过。应用通知实际投递、完整 Agent 及强弱模型复现仍待验证。
+
+`docs/` 只存设计、决策与工程计划；`tests/` 存可复用检查。日志、报告、现场绑定、脚本快照和真实基础设施信息保存在仓库外任务目录，不提交推送。示例只使用占位资源，不能作为执行授权。
