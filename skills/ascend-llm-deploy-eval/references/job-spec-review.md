@@ -40,7 +40,7 @@ argv 是参数数组，结构化 JSON 参数用 `{"json": {...}}` 表达，由�
 参考 [bindings 示例](../examples/bindings.example.json)，由 Agent 收集并填写，不作为首次对话用户必填清单：
 
 - model_paths：模型逻辑标识到现场权重目录的映射。
-- network_interface：有多个网络候选时填写已经核验的通信网卡；IP 仍从当前主机查询。
+- network_interface：可选的已核验覆盖值，默认不填写。现场使用 ip 的 JSON 输出发现地址（与 ifconfig 相同用途），通过 sysfs/ethtool 读取当前链路速率；从 UP 且有可用 IPv4 的接口中选择唯一最高速者，保留 VLAN，排除 bridge/veth 等虚拟接口。速率未知、并列或同接口多地址时停止自动选择，待有人值守核验。名称 data0 不构成优先规则；IP 不复用旧值。候选、速率和选择依据进入 resolved 记录。链路速率不等于实测吞吐或跨机连通性，特殊通信拓扑仍需核验。
 - mounts：本任务需要的驱动、通信配置等挂载。生成器补齐任务目录和模型挂载。
 - paths：初始化脚本、通信配置等已核验位置。框架代理程序的路径由生成器补齐。
 

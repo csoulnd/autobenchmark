@@ -44,21 +44,59 @@ def expand(value, context, shell=False):
     return result
 
 
+def interface_speed(name):
+    """Read negotiated link speed in Mbps, never the maximum advertised mode."""
+    if not re.fullmatch(r'[A-Za-z0-9_.:-]+', name):
+        return None
+    try:
+        speed = int((Path('/sys/class/net')/name/'speed').read_text().strip())
+        if speed > 0:
+            return speed
+    except (OSError, ValueError):
+        pass
+    try:
+        match = re.search(r'^\s*Speed:\s*(\d+)Mb/s\s*$', command(['ethtool', name]), re.M)
+        if match and int(match[1]) > 0:
+            return int(match[1])
+    except (OSError, RuntimeError):
+        pass
+    return None
+
+
 def discover_network(preference=None):
-    interfaces = json.loads(command(['ip', '-j', 'address', 'show']))
+    interfaces = json.loads(command(['ip', '-d', '-j', 'address', 'show']))
     choices = []
     for interface in interfaces:
-        if interface.get('operstate') not in ['UP', 'UNKNOWN'] or interface['ifname'] == 'lo':
+        name = interface['ifname']
+        kind = interface.get('linkinfo', {}).get('info_kind')
+        flags = interface.get('flags', [])
+        if (interface.get('operstate') != 'UP' or name == 'lo' or 'NO-CARRIER' in flags
+                or kind in ['bridge', 'veth', 'dummy', 'tun', 'vxlan', 'geneve']):
             continue
-        if preference and interface['ifname'] != preference:
+        addresses = [a['local'] for a in interface.get('addr_info', [])
+                     if a.get('family') == 'inet' and a.get('scope') == 'global'
+                     and not any(a.get(k) for k in ['tentative', 'dadfailed', 'deprecated'])]
+        if not addresses:
             continue
-        for address in interface.get('addr_info', []):
-            if address.get('family') == 'inet' and address.get('scope') == 'global':
-                ipaddress.ip_address(address['local'])
-                choices.append({'interface': interface['ifname'], 'ip': address['local']})
-    if len(choices) != 1:
-        raise ValueError('Select a verified network interface during attended preparation: '+str(choices))
-    return choices[0]
+        speed = interface_speed(name)
+        for address in addresses:
+            ip = ipaddress.ip_address(address)
+            if ip.version == 4 and not (ip.is_loopback or ip.is_link_local or ip.is_unspecified):
+                choices.append({'interface': name, 'ip': address, 'speed_mbps': speed})
+    if preference:
+        candidates = [c for c in choices if c['interface'] == preference]
+        reason = 'explicit_verified_interface'
+    elif choices and all(c['speed_mbps'] is not None for c in choices):
+        fastest = max(c['speed_mbps'] for c in choices)
+        candidates = [c for c in choices if c['speed_mbps'] == fastest]
+        reason = 'highest_negotiated_speed_with_usable_ipv4'
+    else:
+        candidates = []
+        reason = 'unknown_link_speed'
+    if len(candidates) != 1:
+        raise ValueError('Network selection requires attended verification (tie, missing speed/IP or invalid override): '
+                         +json.dumps(choices))
+    return {**candidates[0], 'selection_reason': reason, 'candidates': choices}
 
 
 def allocate_ports(requests):

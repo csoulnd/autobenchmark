@@ -1,5 +1,4 @@
 {
-  "network_interface": "data0.3001",
   "model_paths": {
     "dsv4": "/mnt/share/weight/DeepSeek-V4-Flash-0731"
   },

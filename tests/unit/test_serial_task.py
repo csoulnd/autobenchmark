@@ -138,7 +138,7 @@ class SerialTests(unittest.TestCase):
 
     def test_multiple_networks_require_a_specific_choice(self):
         interfaces=[{'ifname':n,'operstate':'UP','addr_info':[{'family':'inet','scope':'global','local':ip}]} for n,ip in [('a','10.1.0.1'),('b','10.2.0.1')]]
-        with patch.object(preflight,'command',return_value=json.dumps(interfaces)):
+        with patch.object(preflight,'command',return_value=json.dumps(interfaces)), patch.object(preflight,'interface_speed',return_value=1000):
             with self.assertRaises(ValueError):preflight.discover_network()
             self.assertEqual(preflight.discover_network('b')['ip'],'10.2.0.1')
 
