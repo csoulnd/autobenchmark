@@ -23,6 +23,11 @@ def normalize(spec):
     for k,v in {'smoke':'default','max_retries':3,'startup_timeout_seconds':1800,'smoke_timeout_seconds':240}.items():
         e.setdefault(k,v)
     if s.get('schema_version')=='3.0':
+        from container_baseline import DEFAULT_CONTAINER, DEVICES
+        for dep in s.get('deployments', []):
+            container = dep['runtime'].setdefault('container', {})
+            for key, value in {**DEFAULT_CONTAINER, 'devices': DEVICES}.items():
+                container.setdefault(key, copy.deepcopy(value))
         s.setdefault('cleanup',{'after_case':'keep_service','task_end':'stop_container'})
         for case in s.get('cases',[]):
             for k,v in {'formal_requests':case['concurrency']*4,'prefix_num':1,'seed':1,

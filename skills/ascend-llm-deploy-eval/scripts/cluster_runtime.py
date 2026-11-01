@@ -9,6 +9,7 @@ import time
 from stage_runtime import save, digest, http, command
 from remote_node import RemoteNode
 from topology import compile_deployment
+from task_events import emit
 
 
 def prepare_call(binding, request):
@@ -121,6 +122,8 @@ def deploy(root, spec, deployment):
         responses = {key:node.call('identity') for key,node in nodes.items()}
         identities = {key:r['identity'] for key,r in responses.items()}
         if all(r.get('healthy',True) for r in responses.values()) and identities == previous['identities']:
+            if spec.get('_event_context'):
+                emit(Path(spec['_event_root']), 'smoke', 'skipped', reason='Verified READY service reused', **spec['_event_context'])
             return
         raise ValueError('Registered service generation changed; finalize before retry')
     generations=[int(p.name.split('-')[-1]) for p in root.glob('deploy-*') if p.name.split('-')[-1].isdigit()]
@@ -128,6 +131,9 @@ def deploy(root, spec, deployment):
     for attempt in range(1, spec['execution']['max_retries']+2):
         folder = root/f'deploy-{offset+attempt:02}'
         folder.mkdir(parents=True, exist_ok=True)
+        smoke_started = False
+        if spec.get('_event_context'):
+            emit(Path(spec['_event_root']), 'deploy_attempt', 'doing', attempt=attempt, **spec['_event_context'])
         try:
             for node in nodes.values():
                 node.call('start')
@@ -149,6 +155,10 @@ def deploy(root, spec, deployment):
                 if time.monotonic()>=deadline:
                     raise TimeoutError('Proxy health deadline exceeded')
                 time.sleep(2)
+            event_context = spec.get('_event_context', {})
+            if event_context:
+                emit(Path(spec['_event_root']), 'smoke', 'doing', attempt=attempt, **event_context)
+            smoke_started = True
             request = {'model': spec['_served_name'], 'messages': [{'role':'user','content':'Reply with OK.'}],
                        'max_tokens':8, 'stream':False, 'temperature':0}
             save(folder/'smoke-request.json', request)
@@ -163,15 +173,24 @@ def deploy(root, spec, deployment):
                 raise ValueError('Smoke returned no generated content')
             for key, node in nodes.items():
                 node.call('ready', identity=identities[key])
+            if event_context:
+                emit(Path(spec['_event_root']), 'smoke', 'done', attempt=attempt, **event_context)
+                emit(Path(spec['_event_root']), 'deploy_attempt', 'done', attempt=attempt, **event_context)
             save(state_path, {'status':'READY','identities':identities})
             return
         except Exception as exc:
+            if smoke_started and spec.get('_event_context'):
+                emit(Path(spec['_event_root']), 'smoke', 'fail', attempt=attempt, error=repr(exc), **spec['_event_context'])
+            if spec.get('_event_context'):
+                emit(Path(spec['_event_root']), 'deploy_attempt', 'fail', attempt=attempt, error=repr(exc), **spec['_event_context'])
             released = release_all(deployment, 'stop_container', 'failed_deployment')
             save(folder/'failure.json', {'error':repr(exc),'releases':released})
             if any(x['status'] != 'PASSED' for x in released.values()):
                 raise RuntimeError('Node cleanup unverified; no retry') from exc
             if isinstance(exc,ValueError) or attempt == spec['execution']['max_retries']+1:
                 raise
+            if spec.get('_event_context'):
+                emit(Path(spec['_event_root']), 'deploy_attempt', 'retry', attempt=attempt+1, **spec['_event_context'])
 
 
 def finalize(root, spec, resolved):
@@ -225,21 +244,30 @@ def run(root, spec, resolved):
             # case ID in result artifacts identifies the execution, not the reusable load definition.
             case = copy.deepcopy(next(c for c in spec['cases'] if c['id'] == subtask['case_id']))
             case['id'] = subtask['id']
+            context = dict(job_id=spec['job_id'], subcase_id=subtask['id'], case_id=subtask['case_id'], deployment_id=dep_id, phase_id=subtask['phase_id'])
+            case['_event_context'] = context
+            emit(root, 'deploy', 'doing', **context)
             failure_stage='deploy'
             try:
-                deploy(deployment_root, {**spec,'_served_name':definition['model']['served_name']}, dep)
+                deploy(deployment_root, {**spec,'_served_name':definition['model']['served_name'], '_event_root':str(root), '_event_context':context}, dep)
+                emit(root, 'deploy', 'done', **context)
                 from task_runtime import storage_event
                 storage_event(root,'deployment_verified',deployment_id=dep_id)
                 client = clients(dep)[dep['compiled']['endpoint_group']]
                 before={key:node.call('identity')['identity'] for key,node in clients(dep).items()}
-                failure_stage='evaluate'
+                failure_stage='testing'
+                emit(root, 'testing', 'doing', **context)
                 result = client.call('evaluate', timeout=(case['timeout_seconds']+120)*(spec['execution']['max_retries']+1), case=case)
                 after={key:node.call('identity')['identity'] for key,node in clients(dep).items()}
                 if before!=after:
                     raise RuntimeError('A topology service changed during evaluation')
                 results[subtask['id']] = result
+                emit(root, 'testing', 'done' if result['status']=='PASSED' else 'fail', **context)
             except Exception as exc:
+                emit(root, failure_stage, 'fail', error=repr(exc), **context)
+                emit(root, 'reconcile', 'doing', **context)
                 recovery=reconcile_failure(deployment_root,dep,subtask['id'])
+                emit(root, 'reconcile', 'done' if recovery['continue'] else 'blocked', **context)
                 results[subtask['id']] = {'status':'FAILED','error':repr(exc),'failure_stage':failure_stage,
                     'on_failure':subtask['on_failure'],'phase_id':subtask['phase_id'],'reconciliation':recovery}
                 if not recovery['continue']:
@@ -254,8 +282,10 @@ def run(root, spec, resolved):
             policy = subtask['after_case']
             if next_dep and next_dep != dep_id and policy=='keep_service':
                 policy='stop_service'
+            emit(root, 'release', 'doing', policy=policy, **context)
             releases = release_all(dep, policy, 'sub_task:'+subtask['id'])
             save(folder/'release.json', releases)
+            emit(root, 'release', 'done' if all(r['status']=='PASSED' for r in releases.values()) else 'fail', policy=policy, **context)
             if any(r['status'] != 'PASSED' for r in releases.values()):
                 results[subtask['id']]['release_failed'] = True
                 save(folder/'result.json',results[subtask['id']])
@@ -264,7 +294,9 @@ def run(root, spec, resolved):
             if policy != 'keep_service':
                 save(deployment_root/'service-state.json', {'status':'RELEASED'})
     finally:
+        emit(root, 'job_release', 'doing', job_id=spec['job_id'])
         cleanup = finalize(root, spec, resolved)
+        emit(root, 'job_release', 'done' if cleanup['status']=='PASSED' else 'fail', job_id=spec['job_id'])
         for subtask in spec['sub_tasks']:
             results.setdefault(subtask['id'], {'status':'NOT_RUN'})
         passed = cleanup['status']=='PASSED' and all(v['status']=='PASSED' and not v.get('release_failed') for v in results.values())

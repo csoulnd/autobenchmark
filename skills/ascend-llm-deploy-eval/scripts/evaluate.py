@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import time
 from prepare_benchmark_tool import prepare
+from task_events import emit
 from stage_runtime import (entry, read_plan, ready, save, service_identity, state,
                            transition, case_state, update_case)
 
@@ -23,7 +24,7 @@ def evaluate(root, case):
         raise ValueError('Interrupted case has unknown client state; cleanup required')
     if not ready(root, spec):
         raise ValueError('Node not READY; coordinator must verify the complete topology')
-    for name in ['case_runner.py', 'service_process.py', 'validate_case.py', 'cache_reset.py']:
+    for name in ['case_runner.py', 'service_process.py', 'validate_case.py', 'cache_reset.py', 'task_events.py']:
         shutil.copy2(Path(__file__).with_name(name), root/'scripts'/name)
     limit = 1 + spec['execution']['max_retries']
     for attempt in range(len(data['attempts']) + 1, limit + 1):
@@ -31,7 +32,9 @@ def evaluate(root, case):
             raise ValueError('Service not READY; no blind case replay')
         folder = root/'results'/case_id/f'attempt-{attempt:02}'
         folder.mkdir(parents=True, exist_ok=False)
+        case = {**case, '_attempt': attempt}
         save(folder/'case.json', case)
+        emit(root, 'attempt', 'doing', attempt=attempt, **case.get('_event_context', {'subcase_id':case_id}))
         item = {'attempt': attempt, 'folder': str(folder), 'status': 'RUNNING', 'stage': 'evaluate'}
         attempts = case_state(root, case_id)['attempts'] + [item]
         update_case(root, case_id, status='RUNNING', attempts=attempts, safe_to_continue=False)
@@ -61,6 +64,7 @@ def evaluate(root, case):
         attempts[-1] = item
         update_case(root, case_id, status=item['status'], attempts=attempts, safe_to_continue=safe)
         transition(root, 'READY' if unchanged else 'UNKNOWN', cache_state='NEEDS_RESET')
+        emit(root, 'attempt', 'done' if passed else 'fail', attempt=attempt, **case.get('_event_context', {'subcase_id':case_id}))
         if passed:
             return {'status': 'PASSED', 'message': f'{case_id} passed on attempt {attempt}',
                     'artifacts': [str(folder/'validated.json')]}
@@ -69,6 +73,7 @@ def evaluate(root, case):
         print(json.dumps({'event': 'case_attempt_failed', 'case_id': case_id,
                           'attempt': attempt, 'max_attempts': limit, 'error': summary.get('error')}), flush=True)
         if attempt < limit:
+            emit(root, 'attempt', 'retry', attempt=attempt+1, **case.get('_event_context', {'subcase_id':case_id}))
             time.sleep(3)
     raise RuntimeError('Case exhausted retry budget; evidence retained')
 

@@ -24,9 +24,35 @@ def prepare(source, destination):
     if original.count(rate) != 1:
         raise ValueError('Unexpected metric formatting; inspect source')
     patched = original.replace(needle,
-        'subprocess.run(["bash", "-o", "pipefail", "-c", ais_bench_cmd], check=True)')
+        '_benchmark_run(["bash", "-o", "pipefail", "-c", ais_bench_cmd], check=True)')
     patched = patched.replace(rate,
         'return "unavailable" if queries <= 0 else format(hits / queries, ".2%")')
+    # Mark actual wrapper boundaries; do not infer warmup from elapsed time/log polling.
+    hooks = [('[开始] 前缀数据集测试', 'warmup', 'doing'),
+             ('[完成] 前缀数据集测试完成，结果保存在aisbench_result.csv', 'warmup', 'done'),
+             ('[开始] 全量数据集测试', 'benchmark', 'doing'),
+             ('[完成] 全量数据集测试完成，结果保存在aisbench_result.csv', 'benchmark', 'done')]
+    for message, stage, status in hooks:
+        marker = 'logging.info(f"'+message+'")'
+        if marker not in patched:
+            raise ValueError('Missing benchmark event hook: '+message)
+        patched = patched.replace(marker, marker+'; _benchmark_event('+repr(stage)+', '+repr(status)+')')
+    patched = ('import json as _event_json, os as _event_os\n'
+        '_event_stage = None\n'
+        'def _benchmark_event(stage, status):\n'
+        '    global _event_stage\n'
+        '    _event_stage = stage if status == "doing" else None\n'
+        '    if _event_os.environ.get("BENCH_EVENT_ROOT"):\n'
+        '        from task_events import emit\n'
+        '        emit(_event_os.environ["BENCH_EVENT_ROOT"], stage, status, '
+        '**_event_json.loads(_event_os.environ["BENCH_EVENT_CONTEXT"]))\n'
+        'def _benchmark_run(*args, **kwargs):\n'
+        '    try:\n'
+        '        return subprocess.run(*args, **kwargs)\n'
+        '    except Exception:\n'
+        '        if _event_stage:\n'
+        '            _benchmark_event(_event_stage, "fail")\n'
+        '        raise\n'+patched)
     metrics_return = '    return query_tokens, query_tokens_external, hit_tokens, hit_tokens_external'
     if patched.count(metrics_return) != 1:
         raise ValueError('Unexpected metrics reader; inspect source')

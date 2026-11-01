@@ -216,7 +216,8 @@ def create_execution(spec, dep, root, index, bindings, network, port_bases, port
         parsed = urlsplit(url)
         if parsed.scheme != 'http' or parsed.hostname not in ['127.0.0.1', 'localhost', network['ip']] or parsed.port not in ports:
             raise ValueError('Service URL must use allocated local port: '+url)
-    mounts = list(bindings.get('mounts', []))
+    from container_baseline import baseline_mounts, DEVICES, DEFAULT_CONTAINER
+    mounts = baseline_mounts(bindings.get('mounts', []))
     pool=spec.get('container_pool')
     locations=[(pool['task_root'],False)]+[(str(Path(v).resolve()),True) for v in pool['model_paths']] if pool else [(str(root),False),(str(model_path.resolve()),True)]
     for path, read_only in locations:
@@ -227,9 +228,11 @@ def create_execution(spec, dep, root, index, bindings, network, port_bases, port
             mounts.append({'source': path, 'target': path, 'read_only': read_only})
     if len({m['target'] for m in mounts}) != len(mounts):
         raise ValueError('Duplicate mount targets')
-    devices = ['/dev/davinci'+str(i) for i in (pool['devices'] if pool else dep['npu_ids'])]
-    devices += [str(p) for p in map(Path, ['/dev/davinci_manager', '/dev/hisi_hdc', '/dev/ummu', '/dev/uburma']) if p.exists()]
-    container = {**dep['container'], 'devices': devices, 'mounts': mounts}
+    devices = list(dep['container'].get('devices', DEVICES))
+    required_cards = ['/dev/davinci'+str(i) for i in (pool['devices'] if pool else dep['npu_ids'])]
+    if not set(required_cards).issubset(devices):
+        raise ValueError('Container devices do not cover assigned model devices')
+    container = {**DEFAULT_CONTAINER, **dep['container'], 'devices': devices, 'mounts': mounts}
     generated=list((child/'scripts').glob('start-*.sh'))
     if (child/'scripts/proxy.py').exists():
         generated.append(child/'scripts/proxy.py')

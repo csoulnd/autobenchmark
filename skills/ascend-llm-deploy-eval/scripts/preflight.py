@@ -46,7 +46,10 @@ def check(root):
             save(root/'preflight-evidence.json',evidence)
             raise ValueError('Requested NPUs occupied or state unknown; do not touch other jobs')
         for port in service['ports']:
-            with socket.socket() as sock: sock.bind(('0.0.0.0',port))
+            try:
+                with socket.socket() as sock: sock.bind(('0.0.0.0',port))
+            except OSError as exc:
+                raise RuntimeError(f'Port preflight failed: address=0.0.0.0 port={port} errno={exc.errno}; inspect ss and ownership before retry') from exc
         evidence['free_ports']=service['ports']
     save(root/'preflight-evidence.json',evidence)
     return {'status':'PASSED','message':'Selected dependencies and service/resources verified','artifacts':[str(root/'preflight-evidence.json')]}

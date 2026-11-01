@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 from preflight import check
+from container_baseline import docker_run_args
 from stage_runtime import command,entry,inspect_owned,read_plan,ready,state,transition,ownership_digest,pool_state,save_pool
 
 
@@ -30,8 +31,7 @@ def start_node(root, action="start"):
         cid=c['Id']
     else:
         args=['docker','run','-d','--name',s['target']['container'],'--label','benchmark.job_id='+s['job_id'],
-              '--label','benchmark.spec_sha256='+ownership_digest(s),'--net=host','--shm-size='+s['container']['shm_size']]
-        if s['container']['privileged']: args+=['--privileged']
+              '--label','benchmark.spec_sha256='+ownership_digest(s)]+docker_run_args(s['container'])
         for d in s['container']['devices']: args+=['--device',d]
         for m in s['container']['mounts']: args+=['-v',m['source']+':'+m['target']+(':ro' if m['read_only'] else '')]
         args+=['-w',str(root),image,'sleep','infinity']

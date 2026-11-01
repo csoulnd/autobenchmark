@@ -13,13 +13,48 @@
       },
       "mounts": [
         {
-          "source": "/usr/local/Ascend/driver",
-          "target": "/usr/local/Ascend/driver",
+          "source": "/root/host",
+          "target": "/root/host",
+          "read_only": false
+        },
+        {
+          "source": "/usr/local/sbin",
+          "target": "/usr/local/sbin",
+          "read_only": false
+        },
+        {
+          "source": "/usr/local/sbin/npu-smi",
+          "target": "/usr/local/sbin/npu-smi",
+          "read_only": false
+        },
+        {
+          "source": "/usr/local/bin/npu-smi",
+          "target": "/usr/local/bin/npu-smi",
           "read_only": false
         },
         {
           "source": "/usr/local/dcmi",
           "target": "/usr/local/dcmi",
+          "read_only": false
+        },
+        {
+          "source": "/var/log/npu",
+          "target": "/usr/slog",
+          "read_only": false
+        },
+        {
+          "source": "/mnt",
+          "target": "/mnt",
+          "read_only": false
+        },
+        {
+          "source": "/usr/lib64",
+          "target": "/usr/lib64",
+          "read_only": false
+        },
+        {
+          "source": "/home",
+          "target": "/home",
           "read_only": false
         },
         {
@@ -30,6 +65,11 @@
         {
           "source": "/etc/hccl_rootinfo.json",
           "target": "/etc/hccl_rootinfo.json",
+          "read_only": false
+        },
+        {
+          "source": "/usr/local/Ascend/driver",
+          "target": "/usr/local/Ascend/driver",
           "read_only": false
         }
       ],
