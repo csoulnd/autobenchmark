@@ -30,7 +30,8 @@ def check(root):
     if not (Path(s['benchmark']['tool_dir'])/'aisbench_test.py').is_file(): raise ValueError('Missing benchmark tool')
     network=service.get('network')
     if network:
-        addresses=json.loads(command(['ip','-j','address','show','dev',network['interface']]))
+        from task_preflight import network_addresses
+        addresses=network_addresses('dev',network['interface'])
         if not any(x.get('local')==network['ip'] for i in addresses for x in i.get('addr_info',[])):
             raise ValueError('Configured network address absent')
         evidence['network']=addresses

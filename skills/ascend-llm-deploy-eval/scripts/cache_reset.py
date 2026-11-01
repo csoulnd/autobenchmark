@@ -4,6 +4,7 @@ import math
 import re
 from datetime import datetime, timezone
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 
 
 def require_idle(metrics):
@@ -14,7 +15,7 @@ def require_idle(metrics):
             raise RuntimeError('Instance not verified idle: ' + name)
 
 
-def reset_instances(folder, ports, http):
+def reset_instances(folder, ports, http, target_urls=None):
     """http rejects non-2xx responses. Never route reset through the proxy."""
     report = {'status': 'FAILED', 'scope': 'local_prefix_cache',
               'time': datetime.now(timezone.utc).isoformat(), 'instances': []}
@@ -23,8 +24,9 @@ def reset_instances(folder, ports, http):
             raise ValueError('Expected distinct model instance reset ports')
         # Check every instance before issuing any mutating request.
         for port in ports:
-            item = {'port': port, 'url': f'http://127.0.0.1:{port}/reset_prefix_cache',
+            item = {'target_id': port, 'url': (target_urls[port] if target_urls else f'http://127.0.0.1:{port}')+'/reset_prefix_cache',
                     'status': 'CHECKING_IDLE'}
+            item['port']=urlsplit(item['url']).port
             report['instances'].append(item)
             metrics = http(port, '/metrics')
             (folder/f'reset-{port}-idle.txt').write_text(metrics)
@@ -32,7 +34,7 @@ def reset_instances(folder, ports, http):
             item['status'] = 'IDLE'
         failures = []
         for item in report['instances']:
-            port = item['port']
+            port = item['target_id']
             try:
                 body = http(port, '/reset_prefix_cache', 'POST')
                 (folder/f'reset-{port}-0.json').write_text(body)

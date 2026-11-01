@@ -17,11 +17,12 @@ def run(root,folder):
     spec=json.loads(spec_path.read_text())
     case=json.loads((folder/'case.json').read_text())
     service=json.loads((root/'scripts/service.json').read_text())
+    reset_targets={i:url.rsplit('/reset_prefix_cache',1)[0] for i,url in enumerate(service['reset_urls'])} if 'reset_urls' in service else {p:f'http://127.0.0.1:{p}' for p in service['reset_ports']}
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
     def http(port,path,method='GET'):
-        with opener.open(urllib.request.Request(f'http://127.0.0.1:{port}{path}',method=method),timeout=30) as r:
+        with opener.open(urllib.request.Request(reset_targets[port]+path,method=method),timeout=30) as r:
             return r.read().decode()
-    case=dict(case,prefill_dp=spec['benchmark']['prefill_dp'],reset_ports=service['reset_ports'])
+    case=dict(case,prefill_dp=spec['benchmark']['prefill_dp'],reset_ports=list(reset_targets))
     (folder/'case.json').write_text(json.dumps(case,indent=2))
     work=Path(spec['benchmark']['aisbench_work_path'])
     links=[work/'ais_bench/datasets/gsm8k/test.jsonl',work/'ais_bench/benchmark/configs/models/vllm_api/vllm_api_chat_temp.py']
@@ -36,13 +37,13 @@ def run(root,folder):
     config={'DATASET_PATH':str(datasets),'WORK_PATH':str(work),'MODEL_NAME':spec['model']['served_name'],
         'MODEL_PATH':spec['model']['path'],'HOST_IP':endpoint.hostname,'HOST_PORT':str(endpoint.port),
         'URL':'','API_KEY':'','DEFAULT_PERFORMANCE_TEST':'default_perf','OUTPUT_DIR':'./outputs',
-        'POD_INFO':[f"127.0.0.1:{service['prefill_port']}"]}
+        'POD_INFO':[service['prefill_url'].split('://',1)[-1] if 'prefill_url' in service else f"127.0.0.1:{service['prefill_port']}"]}
     (tool/'config.py').write_text(''.join(f'{k} = {v!r}\n' for k,v in config.items()))
     process=None; errors=[]; result=None; failure=None; started=time.monotonic()
     try:
         if case['reset_cache']:
-            reset_instances(folder, service['reset_ports'], http)
-        for port in service['reset_ports']:
+            reset_instances(folder, list(reset_targets), http, reset_targets)
+        for port in reset_targets:
             (folder/f'metrics-{port}-before.txt').write_text(http(port,'/metrics'))
         argv=['python3','aisbench_test.py','--input_len',str(case['input_tokens']),'--output_len',str(case['output_tokens']),
             '--data_num',str(case['formal_requests']),'--concurrency',str(case['concurrency']),
@@ -56,7 +57,7 @@ def run(root,folder):
             (folder/'client.json').write_text(json.dumps(identity))
             code=process.wait(timeout=case['timeout_seconds'])
         if code: raise RuntimeError(f'Benchmark exited {code}; see console.log')
-        for port in service['reset_ports']:
+        for port in reset_targets:
             (folder/f'metrics-{port}-after.txt').write_text(http(port,'/metrics'))
         result=validate(folder,case)
     except Exception as exc:

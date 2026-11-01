@@ -1,49 +1,31 @@
-# 任务配置与现场绑定
+# 分层部署、可复用 case 与现场绑定
 
-当前主格式是 [job_spec v3](../schemas/job_spec.schema.json)，参考 [串行任务示例](../examples/job_spec.serial.json)。只接受 v3；旧格式会被拒绝，不自动迁移。
+当前只接受 job_spec v3 的拓扑结构，不兼容开发阶段旧平铺字段。参考 examples/job_spec.serial.json 和 examples/bindings.example.json；示例不包含真实服务器、私有路径或镜像摘要。
 
-## 两种记录的职责
+## 三类定义
 
-- job_spec：标准部署意图、命令及环境、模型标识、case 关联与顺序、执行策略。用户脚本来源路径不进入执行依赖；机器绑定值使用占位符。case 的顺序就是执行顺序，不自动重排或扩展组合。
-- bindings / resolved：Agent 在有人值守阶段取得的实际位置与环境。bindings 是探测前所需的已知位置和网络选择，resolved 是预检后冻结的实际值，不属于配置库。模型实际路径、网卡/IP、分配端口、工具位置、任务目录与生成脚本路径在此绑定。
+- deployments：每项为完整服务拓扑，包含 id、topology、model、runtime、instances、connections、endpoint。
+- cases：仅描述负载：输入/输出 token、并发、请求数、前缀目标等，不引用部署。默认请求数并发×4，显式值优先。
+- sub_tasks：显式串行执行清单，id、deployment_id、case_id、after_case。一个 case 可以被多个子任务引用；结果用 sub_task ID 隔离。当前不支持 phase 并行屏障。
 
-配置存储本轮只做事件埋点，不引入部署配置库、版本体系或自动检索。当前任务 JSON、执行代码快照和运行证据是完成任务所必需的产物，仍然保存。
+## deployment
 
-## job_spec 字段
+model 存逻辑模型 id 与 served_name。runtime 存共用镜像和容器要求。instances 中每个进程有角色 mixed/prefill/decode/proxy，以及 placement（逻辑 node、container_group、devices）、launch（模型 args/env/bootstrap 或内置 proxy adapter）、ports、checks。
 
-| 字段 | 用途 |
-|---|---|
-| job_id / target.host | 整组任务标识、目标 SSH 主机；实际任务目录由命令行指定 |
-| deployments[].id | 部署配置标识，供 case 引用 |
-| deployments[].image / model | 镜像引用、模型逻辑标识、服务名和上下文上限；实际镜像 ID 在预检解析 |
-| deployments[].npu_ids / container | 设备分配及容器共享内存、特权要求 |
-| deployments[].commands | 审阅后的 argv、env 和 bootstrap 环境初始化内容；可以包含多个服务入口 |
-| deployments[].ports | 端口逻辑名称及所需连续范围宽度，不存固定端口号 |
-| deployments[].service | 健康检查、服务入口、缓存重置及前缀指标端口的模板 |
-| deployments[].prefill_dp | 当前前缀工具的预热并行参数，从部署内容提取 |
-| cases[] | 每个 case 的 id、deployment_id、输入/输出长度、并发和前缀比例，以及可选覆盖值 |
-| execution / cleanup | 冒烟、重试与超时；case 与任务的释放策略 |
-| state / unresolved | draft 供信息整理；ready 且无未决任务目标才生成执行计划 |
+同一逻辑 node 和 container_group 共用一个容器；不同节点即使 group 同名也属于独立容器。单机 PD 将 P、D、proxy 放到同一 node，P/D 设备互不重叠。双机 PD 将 P、D 放到不同 node。当前 PD 路径只实现一个 P、一个 D 和一个 proxy；混部只有一个 mixed。DP/TP 必须匹配实例设备数。模型参数以实例 launch.args 为唯一来源，max-model-len 在每个模型实例定义，测试必须满足所有相关实例的上限。
 
-plan_run 补齐请求数=并发×4、prefix_num=1、seed=1、request_rate=0、warmup/reset_cache=true，保留用户明确覆盖值。单轮执行；需要重复测量时显式组织不同 case ID，不暗中重复。
+connections.kv_transfer 关联 producer/consumer 和 connector；connections.routing 关联 proxy、prefillers、decoders。KV 配置中的 P/D DP/TP 与角色由实例关系生成。endpoint 引用对外服务实例和逻辑端口。禁止在 launch.args 重复填写由编译器管理的 host、port、served-model-name、device-ids、kv-transfer-config。
 
-## 从用户脚本到命令
+launch.args 中 true/false 渲染为开关及 no- 开关，数值/字符串为参数值，对象/数组编码为单个 JSON 参数；配置必须经过 Agent 审阅，不能把字符串 shell 当任意可执行命令。bootstrap 保留已审阅的环境加载步骤。当前以 vllm serve 和内置 PD proxy 为执行适配器，不承诺任意服务框架。
 
-Agent 读取本地/远程脚本或粘贴内容，识别真正的启动参数、环境设置和旧机器绑定值。保留已经确认的部署调优参数，将旧权重位置、IP、NIC、端口、输出目录改成明确占位符。不要对任意脚本做全局字符串替换，也不要保留与启动无关的破坏性操作。
+## bindings
 
-argv 是参数数组，结构化 JSON 参数用 `{"json": {...}}` 表达，由生成器序列化。bootstrap 只用于已审阅的环境初始化，动态占位符由生成器按 shell 参数转义；不要在占位符外再手工加引号。未知占位符会阻塞生成。
+bindings.nodes 按逻辑 node 记录 host、work_dir、package、model_paths、paths、mounts，可选 network_interface。真实现场信息仅放仓库外。
 
-常用绑定：`{{model.path}}`、`{{model.served_name}}`、`{{network.ip}}`、`{{network.interface}}`、`{{ports.NAME}}`、`{{paths.NAME}}`、`{{run_dir}}`、`{{task_dir}}`。env 中普通 shell `$VAR` 不自动展开；需要环境继承/展开的表达式放在已审阅 bootstrap 中。
+Agent 先将相同版本 Skill 包上传到各节点 package 路径，协调端需要能免密 SSH 到全部节点（包含自身作为节点的情形）。preflight 通过固定节点脚本和 JSON 请求发现环境并生成脚本，不远程执行输入中的 Python 代码。各节点权重、镜像解析、设备、端口与工具均分别检查。
 
-## bindings 与动态发现
+默认不填写 network_interface：从 UP 且有 IPv4 的接口按当前协商速率选唯一最高者，保留 VLAN，排除 bridge/veth 等虚拟接口。通过 ip JSON 与 sysfs/ethtool 获取信息，不按 data0 名称选择。速率未知、并列或多地址需有人核验；网卡速率不代表跨机可达性。ip 命令损坏时尝试系统路径，不修改服务器 PATH 或网络。端口从系统临时客户端端口区间之外动态选择，启动前再检查；这不是永久端口租约。
 
-参考 [bindings 示例](../examples/bindings.example.json)，由 Agent 收集并填写，不作为首次对话用户必填清单：
+## 执行产物
 
-- model_paths：模型逻辑标识到现场权重目录的映射。
-- network_interface：可选的已核验覆盖值，默认不填写。现场使用 ip 的 JSON 输出发现地址（与 ifconfig 相同用途），通过 sysfs/ethtool 读取当前链路速率；从 UP 且有可用 IPv4 的接口中选择唯一最高速者，保留 VLAN，排除 bridge/veth 等虚拟接口。速率未知、并列或同接口多地址时停止自动选择，待有人值守核验。名称 data0 不构成优先规则；IP 不复用旧值。候选、速率和选择依据进入 resolved 记录。链路速率不等于实测吞吐或跨机连通性，特殊通信拓扑仍需核验。
-- mounts：本任务需要的驱动、通信配置等挂载。生成器补齐任务目录和模型挂载。
-- paths：初始化脚本、通信配置等已核验位置。框架代理程序的路径由生成器补齐。
-
-AISBench 位置通过选定镜像内的无设备、无网络临时探测容器动态获取；探测容器退出或异常后核验清理。工具布局不兼容时明确阻塞。端口按逻辑名称与范围动态分配，真正启动前再次检查占用；预检不是资源永久预留。
-
-生成后的 resolved-task.json 关联每个部署的 resolved.json、部署摘要与启动脚本哈希。改变绑定需要新任务目录，不覆盖已冻结的执行内容。job_spec 不承担配置检索或存储服务职责。
+plan.json 固定需求和 sub_task 顺序；resolved-cluster.json 保存拓扑编译结果及节点注册信息。节点保存 discovery.json、各容器的 resolved.json、启动脚本和脚本摘要。resolved-1 是内部节点执行产物，不是另一种用户输入格式。归属摘要与实际容器/进程身份一并核验。配置库尚未实现，仅保留事件埋点。

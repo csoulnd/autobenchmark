@@ -28,6 +28,8 @@ def normalize(spec):
             for k,v in {'formal_requests':case['concurrency']*4,'prefix_num':1,'seed':1,
                         'request_rate':0,'warmup':True,'reset_cache':True,'timeout_seconds':5400}.items():
                 case.setdefault(k,v)
+    for subtask in s.get('sub_tasks', []):
+        subtask.setdefault('after_case', s['cleanup']['after_case'])
     return s
 
 
@@ -46,7 +48,7 @@ def plan(spec,root):
     if s['state']!='ready': raise ValueError('Draft requires attended resolution')
     result={'job_spec':s,'job_spec_sha256':digest(s),'status':'PLANNED','runtime_verified':False}
     if s['schema_version']=='3.0':
-        result['sequence']=[{'case_id':c['id'],'deployment_id':c['deployment_id']} for c in s['cases']]
+        result['sequence']=s['sub_tasks']
     if (root/'plan.json').exists() and load_json(root/'plan.json')!=result:
         raise ValueError('Existing plan differs; use a new job_id')
     root.mkdir(parents=True,exist_ok=True)

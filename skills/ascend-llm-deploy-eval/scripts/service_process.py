@@ -29,10 +29,14 @@ def members(pgid):
 def main(action,root):
     path=root/'service-processes.json'
     data=json.loads(path.read_text()) if path.exists() else []
-    if action=='start':
-        if data: raise ValueError('Existing service process registry; stop before start')
+    if action in ['start','start_models','start_proxy']:
+        if data and action!='start_proxy': raise ValueError('Existing service process registry; stop before start')
         service=json.loads((root/'scripts/service.json').read_text())
         for item in service['commands']:
+            if action=='start_models' and item.get('role')=='proxy': continue
+            if action=='start_proxy' and item.get('role')!='proxy': continue
+            if any(old['name']==item['name'] for old in data):
+                raise ValueError('Process already registered: '+item['name'])
             with (root/'logs'/(item['name']+'.log')).open('a') as log:
                 proc=subprocess.Popen(item['argv'],stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
             data.append({'name':item['name'],'pid':proc.pid,'start_ticks':ticks(proc.pid)})

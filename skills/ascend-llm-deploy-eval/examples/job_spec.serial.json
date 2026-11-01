@@ -2,291 +2,210 @@
   "schema_version": "3.0",
   "job_id": "20261101-001",
   "state": "draft",
-  "target": {
-    "host": "user@benchmark-host.example"
-  },
   "deployments": [
     {
       "id": "pd-a",
-      "image": "your-registry.example/vllm-ascend:your-verified-tag",
+      "topology": "pd",
       "model": {
         "id": "dsv4",
-        "served_name": "dsv",
-        "max_model_len": 1048576
+        "served_name": "dsv"
       },
-      "npu_ids": [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7
-      ],
-      "container": {
-        "shm_size": "500g",
-        "privileged": true
+      "runtime": {
+        "image": "your-registry.example/vllm-ascend:your-verified-tag",
+        "container": {
+          "shm_size": "500g",
+          "privileged": true
+        }
       },
-      "ports": {
-        "prefill": 1,
-        "decode": 1,
-        "proxy": 1,
-        "prefill_rpc": 4,
-        "decode_rpc": 4,
-        "prefill_kv": 1,
-        "decode_kv": 1,
-        "prefill_hccl": 128,
-        "decode_hccl": 128
-      },
-      "commands": [
+      "instances": [
         {
-          "name": "prefill",
-          "argv": [
-            "vllm",
-            "serve",
-            "{{model.path}}",
-            "--device-ids",
-            "0,1,2,3",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "{{ports.prefill}}",
-            "--data-parallel-size",
-            "2",
-            "--data-parallel-address",
-            "{{network.ip}}",
-            "--data-parallel-rpc-port",
-            "{{ports.prefill_rpc}}",
-            "--tensor-parallel-size",
-            "2",
-            "--max_model_len",
-            "{{model.max_model_len}}",
-            "--max-num-batched-tokens",
-            "8192",
-            "--served-model-name",
-            "{{model.served_name}}",
-            "--gpu-memory-utilization",
-            "0.90",
-            "--enable-expert-parallel",
-            "--async-scheduling",
-            "--max-num-seqs",
-            "64",
-            "--block-size",
-            "32",
-            "--api_server_count",
-            "1",
-            "--tokenizer-mode",
-            "deepseek_v4",
-            "--tool-call-parser",
-            "deepseek_v4",
-            "--enable-auto-tool-choice",
-            "--reasoning-parser",
-            "deepseek_v4",
-            "--trust-remote-code",
-            "--profiler-config",
-            {
-              "json": {
+          "id": "prefill",
+          "role": "prefill",
+          "placement": {
+            "node": "node_a",
+            "container_group": "model",
+            "devices": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          "launch": {
+            "program": "vllm serve",
+            "args": {
+              "data-parallel-size": 2,
+              "tensor-parallel-size": 2,
+              "max-model-len": 1048576,
+              "max-num-batched-tokens": 8192,
+              "gpu-memory-utilization": 0.9,
+              "enable-expert-parallel": true,
+              "async-scheduling": true,
+              "max-num-seqs": 64,
+              "block-size": 32,
+              "api_server_count": 1,
+              "tokenizer-mode": "deepseek_v4",
+              "tool-call-parser": "deepseek_v4",
+              "enable-auto-tool-choice": true,
+              "reasoning-parser": "deepseek_v4",
+              "trust-remote-code": true,
+              "profiler-config": {
                 "profiler": "torch",
                 "torch_profiler_dir": "{{run_dir}}/logs/profiler",
                 "torch_profiler_with_stack": false
-              }
-            },
-            "--enable-prefix-caching",
-            "--enforce-eager",
-            "--no-disable-hybrid-kv-cache-manager",
-            "--kv-cache-dtype",
-            "fp8",
-            "--attention_config.indexer_kv_dtype",
-            "fp8",
-            "--speculative-config",
-            {
-              "json": {
+              },
+              "enable-prefix-caching": true,
+              "enforce-eager": true,
+              "no-disable-hybrid-kv-cache-manager": true,
+              "kv-cache-dtype": "fp8",
+              "attention_config.indexer_kv_dtype": "fp8",
+              "speculative-config": {
                 "method": "dspark",
                 "num_speculative_tokens": 7,
                 "enforce_eager": true
-              }
-            },
-            "--kv-transfer-config",
-            {
-              "json": {
-                "kv_connector": "MooncakeHybridConnector",
-                "kv_role": "kv_producer",
-                "kv_port": "{{ports.prefill_kv}}",
-                "engine_id": "p0",
-                "kv_connector_extra_config": {
-                  "ascend_local_comm_res_path": "{{paths.comm}}",
-                  "prefill": {
-                    "dp_size": 2,
-                    "tp_size": 2
-                  },
-                  "decode": {
-                    "dp_size": 4,
-                    "tp_size": 1
-                  }
-                }
-              }
-            },
-            "--additional_config",
-            {
-              "json": {
+              },
+              "additional_config": {
                 "enable_cpu_binding": "True",
                 "multistream_overlap_shared_expert": true
               }
-            }
-          ],
-          "bootstrap": "set -o pipefail\nunset ftp_proxy\nunset https_proxy\nunset http_proxy\nunset HCCL_INTRA_ROCE_ENABLE\nsource {{paths.shell_rc}}\nsource {{paths.ascend_env}} 2>/dev/null || true\nsource {{paths.atb_env}} 2>/dev/null || true\n\nexport HCCL_IF_IP={{network.ip}}\nexport VLLM_HOST_IP={{network.ip}}\nexport GLOO_SOCKET_IFNAME={{network.interface}}\nexport TP_SOCKET_IFNAME={{network.interface}}\nexport HCCL_SOCKET_IFNAME={{network.interface}}\n\nexport HCCL_ALGO=level0:fullmesh\nexport VLLM_RPC_TIMEOUT=3600000\nexport VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=30000\nexport HCCL_EXEC_TIMEOUT=2040\nexport HCCL_CONNECT_TIMEOUT=1200\nexport HCCL_BUFFSIZE=2048\nexport HCCL_IF_BASE_PORT={{ports.prefill_hccl}}\nexport LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH\nexport ASCEND_LOCAL_COMM_RES='{\"version\":\"1.3\"}'\nexport ASCEND_LOCAL_COMM_RES_PATH={{paths.comm}}\n\nexport OMP_PROC_BIND=false\nexport OMP_NUM_THREADS=10\nexport PYTORCH_NPU_ALLOC_CONF=expandable_segments:True\nexport TASK_QUEUE_ENABLE=1\nexport VLLM_USE_V2_MODEL_RUNNER=1\nexport VLLM_USE_FASTOKENS=1\nunset ASCEND_RT_VISIBLE_DEVICES ASCEND_VISIBLE_DEVICES\nexport VLLM_ASCEND_ENABLE_FLASHCOMM1=1\nexport LD_PRELOAD={{paths.opapi}}\n",
-          "env": {
-            "VLLM_SERVER_DEV_MODE": "1"
+            },
+            "env": {
+              "VLLM_SERVER_DEV_MODE": "1"
+            },
+            "bootstrap": "set -o pipefail\nunset ftp_proxy\nunset https_proxy\nunset http_proxy\nunset HCCL_INTRA_ROCE_ENABLE\nsource {{paths.shell_rc}}\nsource {{paths.ascend_env}} 2>/dev/null || true\nsource {{paths.atb_env}} 2>/dev/null || true\n\n\nexport HCCL_ALGO=level0:fullmesh\nexport VLLM_RPC_TIMEOUT=3600000\nexport VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=30000\nexport HCCL_EXEC_TIMEOUT=2040\nexport HCCL_CONNECT_TIMEOUT=1200\nexport HCCL_BUFFSIZE=2048\nexport LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH\nexport ASCEND_LOCAL_COMM_RES='{\"version\":\"1.3\"}'\nexport ASCEND_LOCAL_COMM_RES_PATH={{paths.comm}}\n\nexport OMP_PROC_BIND=false\nexport OMP_NUM_THREADS=10\nexport PYTORCH_NPU_ALLOC_CONF=expandable_segments:True\nexport TASK_QUEUE_ENABLE=1\nexport VLLM_USE_V2_MODEL_RUNNER=1\nexport VLLM_USE_FASTOKENS=1\nunset ASCEND_RT_VISIBLE_DEVICES ASCEND_VISIBLE_DEVICES\nexport VLLM_ASCEND_ENABLE_FLASHCOMM1=1\nexport LD_PRELOAD={{paths.opapi}}\n"
+          },
+          "ports": {
+            "http": 1,
+            "kv": 1,
+            "rpc": 4,
+            "hccl": 16
+          },
+          "checks": {
+            "health": "/health",
+            "prefix_cache_reset": "/reset_prefix_cache",
+            "metrics": "/metrics"
           }
         },
         {
-          "name": "decode",
-          "argv": [
-            "vllm",
-            "serve",
-            "{{model.path}}",
-            "--device-ids",
-            "4,5,6,7",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "{{ports.decode}}",
-            "--data-parallel-size",
-            "4",
-            "--data-parallel-address",
-            "{{network.ip}}",
-            "--data-parallel-rpc-port",
-            "{{ports.decode_rpc}}",
-            "--tensor-parallel-size",
-            "1",
-            "--max_model_len",
-            "{{model.max_model_len}}",
-            "--max-num-batched-tokens",
-            "512",
-            "--served-model-name",
-            "{{model.served_name}}",
-            "--gpu-memory-utilization",
-            "0.92",
-            "--enable-expert-parallel",
-            "--async-scheduling",
-            "--max-num-seqs",
-            "64",
-            "--block-size",
-            "32",
-            "--enable-prefix-caching",
-            "--api_server_count",
-            "1",
-            "--tokenizer-mode",
-            "deepseek_v4",
-            "--tool-call-parser",
-            "deepseek_v4",
-            "--enable-auto-tool-choice",
-            "--reasoning-parser",
-            "deepseek_v4",
-            "--trust-remote-code",
-            "--profiler-config",
-            {
-              "json": {
+          "id": "decode",
+          "role": "decode",
+          "placement": {
+            "node": "node_a",
+            "container_group": "model",
+            "devices": [
+              4,
+              5,
+              6,
+              7
+            ]
+          },
+          "launch": {
+            "program": "vllm serve",
+            "args": {
+              "data-parallel-size": 4,
+              "tensor-parallel-size": 1,
+              "max-model-len": 1048576,
+              "max-num-batched-tokens": 512,
+              "gpu-memory-utilization": 0.92,
+              "enable-expert-parallel": true,
+              "async-scheduling": true,
+              "max-num-seqs": 64,
+              "block-size": 32,
+              "enable-prefix-caching": true,
+              "api_server_count": 1,
+              "tokenizer-mode": "deepseek_v4",
+              "tool-call-parser": "deepseek_v4",
+              "enable-auto-tool-choice": true,
+              "reasoning-parser": "deepseek_v4",
+              "trust-remote-code": true,
+              "profiler-config": {
                 "profiler": "torch",
                 "torch_profiler_dir": "{{run_dir}}/logs/profiler",
                 "torch_profiler_with_stack": false
-              }
-            },
-            "--compilation-config",
-            {
-              "json": {
+              },
+              "compilation-config": {
                 "cudagraph_mode": "FULL_DECODE_ONLY"
-              }
-            },
-            "--no-disable-hybrid-kv-cache-manager",
-            "--kv-cache-dtype",
-            "fp8",
-            "--attention_config.indexer_kv_dtype",
-            "fp8",
-            "--speculative-config",
-            {
-              "json": {
+              },
+              "no-disable-hybrid-kv-cache-manager": true,
+              "kv-cache-dtype": "fp8",
+              "attention_config.indexer_kv_dtype": "fp8",
+              "speculative-config": {
                 "method": "dspark",
                 "num_speculative_tokens": 7,
                 "enforce_eager": false
-              }
-            },
-            "--kv-transfer-config",
-            {
-              "json": {
-                "kv_connector": "MooncakeHybridConnector",
-                "kv_role": "kv_consumer",
-                "kv_port": "{{ports.decode_kv}}",
-                "engine_id": "d0",
-                "kv_connector_extra_config": {
-                  "ascend_local_comm_res_path": "{{paths.comm}}",
-                  "prefill": {
-                    "dp_size": 2,
-                    "tp_size": 2
-                  },
-                  "decode": {
-                    "dp_size": 4,
-                    "tp_size": 1
-                  }
-                }
-              }
-            },
-            "--additional_config",
-            {
-              "json": {
+              },
+              "additional_config": {
                 "enable_cpu_binding": "True",
                 "recompute_scheduler_enable": true,
                 "multistream_overlap_shared_expert": true
               }
-            }
-          ],
-          "bootstrap": "set -o pipefail\n\nunset ftp_proxy\nunset https_proxy\nunset http_proxy\nunset HCCL_INTRA_ROCE_ENABLE\nsource {{paths.shell_rc}}\nsource {{paths.ascend_env}} 2>/dev/null || true\nsource {{paths.atb_env}} 2>/dev/null || true\n\nexport HCCL_IF_IP={{network.ip}}\nexport VLLM_HOST_IP={{network.ip}}\nexport GLOO_SOCKET_IFNAME={{network.interface}}\nexport TP_SOCKET_IFNAME={{network.interface}}\nexport HCCL_SOCKET_IFNAME={{network.interface}}\n\nexport HCCL_ALGO=level0:fullmesh\nexport VLLM_RPC_TIMEOUT=3600000\nexport VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=30000\nexport HCCL_EXEC_TIMEOUT=2040\nexport HCCL_CONNECT_TIMEOUT=1200\nexport HCCL_BUFFSIZE=2048\nexport HCCL_IF_BASE_PORT={{ports.decode_hccl}}\nexport LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH\nexport ASCEND_LOCAL_COMM_RES='{\"version\":\"1.3\"}'\nexport ASCEND_LOCAL_COMM_RES_PATH={{paths.comm}}\n\nexport OMP_PROC_BIND=false\nexport OMP_NUM_THREADS=10\nexport PYTORCH_NPU_ALLOC_CONF=expandable_segments:True\nexport TASK_QUEUE_ENABLE=1\nexport VLLM_USE_V2_MODEL_RUNNER=1\nexport VLLM_USE_FASTOKENS=1\nunset ASCEND_RT_VISIBLE_DEVICES ASCEND_VISIBLE_DEVICES\nexport LD_PRELOAD={{paths.opapi}}\n",
-          "env": {
-            "VLLM_SERVER_DEV_MODE": "1"
+            },
+            "env": {
+              "VLLM_SERVER_DEV_MODE": "1"
+            },
+            "bootstrap": "set -o pipefail\n\nunset ftp_proxy\nunset https_proxy\nunset http_proxy\nunset HCCL_INTRA_ROCE_ENABLE\nsource {{paths.shell_rc}}\nsource {{paths.ascend_env}} 2>/dev/null || true\nsource {{paths.atb_env}} 2>/dev/null || true\n\n\nexport HCCL_ALGO=level0:fullmesh\nexport VLLM_RPC_TIMEOUT=3600000\nexport VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=30000\nexport HCCL_EXEC_TIMEOUT=2040\nexport HCCL_CONNECT_TIMEOUT=1200\nexport HCCL_BUFFSIZE=2048\nexport LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH\nexport ASCEND_LOCAL_COMM_RES='{\"version\":\"1.3\"}'\nexport ASCEND_LOCAL_COMM_RES_PATH={{paths.comm}}\n\nexport OMP_PROC_BIND=false\nexport OMP_NUM_THREADS=10\nexport PYTORCH_NPU_ALLOC_CONF=expandable_segments:True\nexport TASK_QUEUE_ENABLE=1\nexport VLLM_USE_V2_MODEL_RUNNER=1\nexport VLLM_USE_FASTOKENS=1\nunset ASCEND_RT_VISIBLE_DEVICES ASCEND_VISIBLE_DEVICES\nexport LD_PRELOAD={{paths.opapi}}\n"
+          },
+          "ports": {
+            "http": 1,
+            "kv": 1,
+            "rpc": 8,
+            "hccl": 16
+          },
+          "checks": {
+            "health": "/health",
+            "prefix_cache_reset": "/reset_prefix_cache",
+            "metrics": "/metrics"
           }
         },
         {
-          "name": "proxy",
-          "argv": [
-            "python3",
-            "{{paths.proxy_program}}",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "{{ports.proxy}}",
-            "--prefiller-hosts",
-            "127.0.0.1",
-            "--prefiller-ports",
-            "{{ports.prefill}}",
-            "--decoder-hosts",
-            "127.0.0.1",
-            "--decoder-ports",
-            "{{ports.decode}}"
-          ],
-          "bootstrap": "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY"
+          "id": "proxy",
+          "role": "proxy",
+          "placement": {
+            "node": "node_a",
+            "container_group": "model",
+            "devices": []
+          },
+          "launch": {
+            "adapter": "bundled_pd_proxy",
+            "bootstrap": "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY"
+          },
+          "ports": {
+            "http": 1
+          },
+          "checks": {
+            "health": "/healthcheck"
+          }
         }
       ],
-      "prefill_dp": 2,
-      "service": {
-        "health_urls": [
-          "http://127.0.0.1:{{ports.prefill}}/health",
-          "http://127.0.0.1:{{ports.decode}}/health"
+      "connections": {
+        "kv_transfer": [
+          {
+            "producer": "prefill",
+            "consumer": "decode",
+            "connector": "MooncakeHybridConnector"
+          }
         ],
-        "endpoint": "http://127.0.0.1:{{ports.proxy}}",
-        "gateway_health_url": "http://127.0.0.1:{{ports.proxy}}/healthcheck",
-        "reset_ports": [
-          "{{ports.prefill}}",
-          "{{ports.decode}}"
-        ],
-        "prefill_port": "{{ports.prefill}}"
+        "routing": [
+          {
+            "proxy": "proxy",
+            "prefillers": [
+              "prefill"
+            ],
+            "decoders": [
+              "decode"
+            ]
+          }
+        ]
+      },
+      "endpoint": {
+        "instance": "proxy",
+        "port": "http"
       }
     }
   ],
   "cases": [
     {
       "id": "64k-c16-p50",
-      "deployment_id": "pd-a",
       "input_tokens": 65536,
       "output_tokens": 1024,
       "concurrency": 16,
@@ -294,7 +213,6 @@
     },
     {
       "id": "64k-c32-p50",
-      "deployment_id": "pd-a",
       "input_tokens": 65536,
       "output_tokens": 1024,
       "concurrency": 32,
@@ -303,5 +221,17 @@
   ],
   "unresolved": [
     "Illustrative task: confirm requested cases and host bindings before execution"
+  ],
+  "sub_tasks": [
+    {
+      "id": "test-1",
+      "deployment_id": "pd-a",
+      "case_id": "64k-c16-p50"
+    },
+    {
+      "id": "test-2",
+      "deployment_id": "pd-a",
+      "case_id": "64k-c32-p50"
+    }
   ]
 }

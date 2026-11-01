@@ -67,22 +67,18 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(len(runtime.state(root)['releases']),2)
 
 class DeploymentRetryTests(unittest.TestCase):
+    def exercise(self,error):
+        import cluster_runtime as cluster
+        from unittest.mock import MagicMock
+        client=MagicMock();client.call.side_effect=error
+        with tempfile.TemporaryDirectory() as d,patch.object(cluster,'clients',return_value={'node':client}),patch.object(cluster,'release_all',return_value={'node':{'status':'PASSED'}}) as release:
+            with self.assertRaises(type(error)):
+                cluster.deploy(Path(d),{'execution':{'max_retries':3}}, {})
+            return client.call.call_count,release.call_count,len(list(Path(d).glob('deploy-*/failure.json')))
     def test_bounded_deploy_retry(self):
-        import deploy
-        import finalize
-        with tempfile.TemporaryDirectory() as d:
-            root=Path(d); (root/'logs').mkdir(); (root/'results').mkdir()
-            with patch.object(deploy,'read_plan',return_value={'execution':{'max_retries':3}}),patch.object(deploy,'ready',return_value=False),patch.object(deploy,'deploy_once',side_effect=RuntimeError('test startup failure')) as start,patch.object(finalize,'release') as release,patch.object(deploy.time,'sleep'):
-                with self.assertRaises(RuntimeError):deploy.deploy(root)
-                self.assertEqual(start.call_count,4); self.assertEqual(release.call_count,4)
-            self.assertEqual(len(runtime.state(root)['deploy_attempts']),4)
+        self.assertEqual(self.exercise(RuntimeError('startup failure')),(4,4,4))
     def test_ownership_not_retried(self):
-        import deploy
-        with tempfile.TemporaryDirectory() as d:
-            root=Path(d)
-            with patch.object(deploy,'read_plan',return_value={'execution':{'max_retries':3}}),patch.object(deploy,'ready',return_value=False),patch.object(deploy,'deploy_once',side_effect=ValueError('ownership')) as start:
-                with self.assertRaises(ValueError):deploy.deploy(root)
-                self.assertEqual(start.call_count,1)
+        self.assertEqual(self.exercise(ValueError('ownership')),(1,1,1))
 
 class LockTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform=='linux','Linux flock integration')

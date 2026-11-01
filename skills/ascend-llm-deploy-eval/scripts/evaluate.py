@@ -4,7 +4,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import time
-from deploy import deploy
 from prepare_benchmark_tool import prepare
 from stage_runtime import (entry, read_plan, ready, save, service_identity, state,
                            transition, case_state, update_case)
@@ -23,7 +22,7 @@ def evaluate(root, case):
     if data['status'] == 'RUNNING':
         raise ValueError('Interrupted case has unknown client state; cleanup required')
     if not ready(root, spec):
-        deploy(root)
+        raise ValueError('Node not READY; coordinator must verify the complete topology')
     for name in ['case_runner.py', 'service_process.py', 'validate_case.py', 'cache_reset.py']:
         shutil.copy2(Path(__file__).with_name(name), root/'scripts'/name)
     limit = 1 + spec['execution']['max_retries']

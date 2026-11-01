@@ -150,3 +150,9 @@ job_spec 升为 v2，每次只接受一个 case。通用执行器读取用户输
 ## 2026-11-01：动态选择通信网卡
 
 默认不填写 network_interface；上机发现 UP 且具备可用 IPv4 的通信接口，按当前协商速率选唯一最高者，不按 data0 名称或管理地址固定选择。sysfs 读取失败时使用 ethtool；排除 bridge/veth 等虚拟接口，保留 VLAN。速率缺失、并列或多个地址交回有人值守核验，允许明确核验后的接口覆盖。选择依据与候选记录进现场绑定结果。
+
+## 2026-11-01：实例拓扑与串行子任务
+
+按用户确认将 deployment 分为 model、runtime、instances、connections、endpoint。instances 按 node/container_group 归入容器，单机 PD 与双机 PD 共用同一拓扑模型。case 只保留负载定义，sub_tasks 引用部署与 case 并配置 after_case。实际服务器与路径仅在仓库外 bindings.nodes 保存；旧平铺输入不再兼容。
+
+协调端调用固定节点脚本，节点保留已有归属核验、容器锁、进程登记和释放实现。模型进程先就绪再启动 proxy，整套服务完成入口冒烟后才可测试。当前只实现串行子任务与一个 P/一个 D/一个 proxy；phase 并行屏障、多 P/D 拓扑和复杂恢复不提前实现。多节点失败后停止后续子任务，逐节点收尾，释放失败独立报告。

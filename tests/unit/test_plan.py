@@ -20,7 +20,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(normalized['cases'][0]['formal_requests'],64)
     def test_reject_conflicts(self):
         mutations=[lambda s:s.update(schema_version='2.0'),
-            lambda s:s['cases'][0].update(id='../bad'),lambda s:s['target'].update(container='other'),
+            lambda s:s['cases'][0].update(id='../bad'),lambda s:s.update(target={'container':'other'}),
             lambda s:s['execution'].update(max_retries=4),lambda s:s['cases'][0].update(formal_requests=0),
             lambda s:s['deployments'][0].update(recipe='../../elsewhere'),lambda s:s.update(unresolved=['missing input'])]
         for mutate in mutations:
@@ -35,7 +35,7 @@ class PlanTests(unittest.TestCase):
             with self.assertRaises(ValueError): planner.plan(self.spec,root)
             self.assertEqual(before,(root/'plan.json').read_bytes())
     def test_deployment_not_bound_to_image_or_model(self):
-        self.spec['deployments'][0]['image']='candidate:test'
+        self.spec['deployments'][0]['runtime']['image']='candidate:test'
         self.spec['deployments'][0]['model']['served_name']='alternate'
         self.assertEqual(planner.validate(self.spec),[])
     def test_duplicate_keys(self):

@@ -20,7 +20,13 @@ def discover():
     executable = shutil.which('ais_bench')
     if not executable:
         raise ValueError('ais_bench command absent from image PATH')
-    return {'aisbench_work_path': candidates[0], 'executable': executable,
+    versions={}
+    for name in ['vllm','vllm-ascend','torch','torch-npu']:
+        try:
+            versions[name]=importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            versions[name]=None
+    return {'package_versions':versions,'aisbench_work_path': candidates[0], 'executable': executable,
             'version': importlib.metadata.version('ais_bench_benchmark')}
 
 
