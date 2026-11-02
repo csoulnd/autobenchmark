@@ -61,11 +61,21 @@ def run(root,folder):
         (folder/'command.json').write_text(json.dumps(argv))
         with (folder/'console.log').open('w') as log:
             process=subprocess.Popen(argv,cwd=tool,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,
-                env={**os.environ, 'BENCH_EVENT_ROOT':str(root), 'BENCH_EVENT_CONTEXT':json.dumps(context),
+                env={**os.environ, 'BENCH_DATASET_CACHE':str(Path(spec.get('storage', {}).get('root', root))/'dataset-cache'), 'BENCH_EVENT_ROOT':str(root), 'BENCH_EVENT_CONTEXT':json.dumps(context),
                      'PYTHONPATH':str(root/'scripts')+os.pathsep+os.environ.get('PYTHONPATH','')})
             identity={'pid':process.pid,'start_ticks':ticks(process.pid)}
             (folder/'client.json').write_text(json.dumps(identity))
-            code=process.wait(timeout=case['timeout_seconds'])
+            deadline=time.monotonic()+case['timeout_seconds']
+            while True:
+                if spec.get('storage'):
+                    from disk_guard import check as disk_check
+                    disk_check(spec['storage']['root'], spec['storage']['subtasks'], folder.parent)
+                remaining=deadline-time.monotonic()
+                if remaining<=0: raise subprocess.TimeoutExpired(argv,case['timeout_seconds'])
+                try:
+                    code=process.wait(timeout=min(30,remaining)); break
+                except subprocess.TimeoutExpired:
+                    continue
         if code: raise RuntimeError(f'Benchmark exited {code}; see console.log')
         for port in reset_targets:
             (folder/f'metrics-{port}-after.txt').write_text(http(port,'/metrics'))

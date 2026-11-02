@@ -28,7 +28,8 @@ def emit(root, stage, status, **fields):
             raise OSError('Incomplete event write')
     except OSError as exc:
         # Progress recording must never prevent client/service cleanup.
-        print('Event recording failed: '+repr(exc), file=sys.stderr, flush=True)
+        try: print('Event recording failed: '+repr(exc), file=sys.stderr, flush=True)
+        except OSError: pass
     finally:
         if fd is not None:
             os.close(fd)

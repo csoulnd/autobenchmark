@@ -5,8 +5,14 @@
 ## 三类定义
 
 - deployments：每项为完整服务拓扑，包含 id、topology、model、runtime、instances、connections、endpoint。
-- cases：仅描述负载：输入/输出 token、并发、请求数、前缀目标等，不引用部署。默认请求数并发×4，显式值优先。
+- cases：仅描述负载：输入/输出 token、并发、请求数、前缀目标等，不引用部署。默认值见下节。
 - sub_tasks：显式串行执行清单，id、phase_id、deployment_id、case_id、after_case、on_failure。phase_id 默认 pp1，仅为分组标识，执行仍按清单顺序；on_failure 当前仅支持 record_only。一个 case 可以被多个子任务引用；结果用 sub_task ID 隔离。当前不支持 phase 并行屏障。
+
+## 配置默认值
+
+用户显式值优先；缺省采用性能测试、每case正式请求数=并发×4、运行1轮。请求数显式保存为formal_requests。prefix_num=1、seed=1、request_rate=0（不限发送速率）；前缀长度由输入长度与目标比例派生，预热DP由部署配置推导。目标比例与实测命中率分别记录。
+
+重试、缓存、冒烟和服务释放的运行规则集中在[生命周期](service-lifecycle.md)。
 
 ## deployment
 
@@ -30,6 +36,12 @@ Agent 先将相同版本 Skill 包上传到各节点 package 路径，协调端�
 
 ## 执行产物
 
-plan.json 固定需求和 sub_task 顺序；resolved-cluster.json 保存拓扑编译结果及节点注册信息。节点保存 discovery.json、各容器的 resolved.json、启动脚本和脚本摘要。resolved-1 是内部节点执行产物，不是另一种用户输入格式。归属摘要与实际容器/进程身份一并核验。配置库尚未实现，仅保留事件埋点。
+plan.json 固定需求和 sub_task 顺序；resolved-cluster.json 保存拓扑编译结果及节点注册信息。节点保存 discovery.json、各容器的 resolved.json、启动脚本和脚本摘要。resolved-1 是内部节点执行产物，不是另一种用户输入格式。归属摘要与实际容器/进程身份一并核验。配置事件定义见[生命周期](service-lifecycle.md#配置存储埋点)。
 
 容器归属摘要与服务摘要分离：前者包含任务计划、镜像与容器配置，后者包含各部署命令和绑定。节点任务目录的 container-pools/<容器名>.json 登记实际容器 ID、当前服务目录及删除状态。旧服务释放核验后才能切换登记；协调器锁与容器锁使用不同名称。
+
+## 命令与检查报告
+
+规范化阶段移除参考命令中的ASCEND_SLOG_PRINT_TO_STDOUT与ASCEND_GLOBAL_LOG_LEVEL赋值；计划校验拒绝在launch.env/bootstrap中显式设置，避免启动细粒度算子日志。环境加载脚本仍需审阅，不保证外部脚本没有间接设置。
+
+节点preflight-report.json记录检查时间、分组结果、失败原因及未执行项目；实际资源值查preflight-evidence.json、discovery.json。检查分组覆盖磁盘、镜像、挂载、设备、权重、tokenizer、工具、网络、资源占用或服务复用。权重检查为索引分片存在性，不是全文件内容校验。失败即停止该节点检查，后续项目不计为通过。现有总体提交条件保持：冻结计划与节点登记一致、预检成功、任务未重复执行；终端只输出总体结论与失败原因。

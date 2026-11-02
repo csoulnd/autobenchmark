@@ -24,12 +24,15 @@ def evaluate(root, case):
         raise ValueError('Interrupted case has unknown client state; cleanup required')
     if not ready(root, spec):
         raise ValueError('Node not READY; coordinator must verify the complete topology')
-    for name in ['case_runner.py', 'service_process.py', 'validate_case.py', 'cache_reset.py', 'task_events.py']:
+    for name in ['case_runner.py', 'disk_guard.py', 'service_process.py', 'validate_case.py', 'cache_reset.py', 'task_events.py']:
         shutil.copy2(Path(__file__).with_name(name), root/'scripts'/name)
     limit = 1 + spec['execution']['max_retries']
     for attempt in range(len(data['attempts']) + 1, limit + 1):
         if not ready(root, spec):
             raise ValueError('Service not READY; no blind case replay')
+        if spec.get('storage'):
+            from disk_guard import check as disk_check
+            disk_check(spec['storage']['root'], spec['storage']['subtasks'], root/'results'/case_id)
         folder = root/'results'/case_id/f'attempt-{attempt:02}'
         folder.mkdir(parents=True, exist_ok=False)
         case = {**case, '_attempt': attempt}
@@ -68,6 +71,8 @@ def evaluate(root, case):
         if passed:
             return {'status': 'PASSED', 'message': f'{case_id} passed on attempt {attempt}',
                     'artifacts': [str(folder/'validated.json')]}
+        if 'Storage budget exceeded' in (summary.get('error') or ''):
+            raise RuntimeError(summary['error'])
         if not safe or not case.get('reset_cache', True):
             raise ValueError('Unsafe to retry: client/service/cache isolation not verified')
         print(json.dumps({'event': 'case_attempt_failed', 'case_id': case_id,

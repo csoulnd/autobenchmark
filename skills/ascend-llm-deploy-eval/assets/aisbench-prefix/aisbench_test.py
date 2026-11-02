@@ -385,8 +385,13 @@ if __name__ == '__main__':
         api_test_abbr = "vllm-api-stream-chat"
 
     if dataset_path_input == "none":
-        src_file_prefix,src_file_data = create_gsm8k_dataset(dataset_type, input_len, data_num, MODEL_PATH, DATASET_PATH, prefix_num, repeat_rate, seed,
-                                                              length_mean, length_std, length_min, length_max)
+        from dataset_cache import cached
+        parameters = [dataset_type, input_len, data_num, prefix_num, repeat_rate, seed, dp,
+                      length_mean, length_std, length_min, length_max]
+        def generate(destination):
+            return create_gsm8k_dataset(dataset_type, input_len, data_num, MODEL_PATH, destination,
+                                       prefix_num, repeat_rate, seed, length_mean, length_std, length_min, length_max)
+        src_file_prefix, src_file_data = cached(os.environ.get('BENCH_DATASET_CACHE', DATASET_PATH), parameters, MODEL_PATH, generate)
     else:
         # 指定数据集路径逻辑
         if not os.path.exists(dataset_path_input):

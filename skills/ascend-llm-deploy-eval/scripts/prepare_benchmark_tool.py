@@ -12,7 +12,7 @@ def prepare(source, destination):
     source = source.resolve()
     required = ['aisbench_test.py', 'generate_dataset.py', 'data_picker.py',
                 'default_api.py', 'save_file.py', 'cal_prefix_hit_rate.py',
-                'GSM8K.jsonl', 'config.py']
+                'GSM8K.jsonl', 'config.py', 'dataset_cache.py']
     for name in required:
         if not (source / name).is_file():
             raise ValueError('Missing tool source: ' + name)

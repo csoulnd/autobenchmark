@@ -200,7 +200,12 @@ def main():
         try:
             return 0 if run(root)['status'] == 'PASSED' else 2
         except Exception as exc:
-            save(root/'group-interrupted.json', {'error': repr(exc)})
+            try: save(root/'group-interrupted.json', {'error': repr(exc)})
+            except OSError:
+                import tempfile
+                fallback=Path(tempfile.gettempdir())/('autobenchmark-interrupted-'+root.name+'.json')
+                try: save(fallback, {'run_dir':str(root),'error':repr(exc)})
+                except OSError: pass
             emit(root, 'group', 'blocked', error=repr(exc))
             raise
 

@@ -88,6 +88,8 @@ def preflight(root, spec, bindings):
                 'commands': group['commands'], 'service': service, 'prefill_dp': compiled['prefill_dp']}
             local_spec = {'job_id': spec['job_id']+f'-{dep_index:03}', 'target': {'host': binding['host']},
                           'execution': spec['execution'], 'cleanup': spec['cleanup'],
+                          'storage': {'root':pools[(dep['id'],group['node'])]['task_root'],
+                           'subtasks':sum(1 for t in spec['sub_tasks'] if any(bindings['nodes'][i['placement']['node']]['host']==binding['host'] for d in spec['deployments'] if d['id']==t['deployment_id'] for i in d['instances']))},
                           'container_pool':pools[(dep['id'],group['node'])]}
             reply = prepare_call({**binding,'package':node['package']}, {'action': 'render', 'run_dir': node['root'],
                 'job_id': local_spec['job_id'], 'spec': local_spec, 'deployment': flat, 'index': group_index,
@@ -266,7 +268,12 @@ def run(root, spec, resolved):
             except Exception as exc:
                 emit(root, failure_stage, 'fail', error=repr(exc), **context)
                 emit(root, 'reconcile', 'doing', **context)
-                recovery=reconcile_failure(deployment_root,dep,subtask['id'])
+                if 'Storage budget exceeded' in str(exc):
+                    releases=release_all(dep,'stop_service','storage_limit')
+                    recovery={'continue':all(v['status']=='PASSED' for v in releases.values()),'releases':releases}
+                    save(deployment_root/'service-state.json',{'status':'RELEASED' if recovery['continue'] else 'UNKNOWN'})
+                else:
+                    recovery=reconcile_failure(deployment_root,dep,subtask['id'])
                 emit(root, 'reconcile', 'done' if recovery['continue'] else 'blocked', **context)
                 results[subtask['id']] = {'status':'FAILED','error':repr(exc),'failure_stage':failure_stage,
                     'on_failure':subtask['on_failure'],'phase_id':subtask['phase_id'],'reconciliation':recovery}

@@ -31,6 +31,12 @@ def validate_task(spec):
     if len(deployments) != len(spec['deployments']) or len(cases) != len(spec['cases']):
         errors.append('Duplicate deployment/case ID')
     for dep in deployments.values():
+        import re
+        for instance in dep['instances']:
+            launch=instance.get('launch',{})
+            for key in ('ASCEND_SLOG_PRINT_TO_STDOUT','ASCEND_GLOBAL_LOG_LEVEL'):
+                if key in launch.get('env',{}) or re.search(r'(?<![A-Za-z0-9_])'+key+r'\s*=',launch.get('bootstrap','')):
+                    errors.append('Remove operator logging assignment: '+key)
         errors.extend(validate_deployment(dep))
     if errors:
         return errors

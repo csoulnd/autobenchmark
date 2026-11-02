@@ -247,6 +247,7 @@ def create_execution(spec, dep, root, index, bindings, network, port_bases, port
         'benchmark': {'adapter': 'aisbench_prefix', 'tool_dir': str(PACKAGE/'assets/aisbench-prefix'),
                       'aisbench_work_path': tools['aisbench_work_path'], 'prefill_dp': dep['prefill_dp']},
         'execution': spec['execution'], 'cleanup': spec['cleanup']}
+    if 'storage' in spec: execution['storage'] = spec['storage']
     if pool:
         execution['job_id']=pool['job_id']
         execution['target']['container']=pool['name']

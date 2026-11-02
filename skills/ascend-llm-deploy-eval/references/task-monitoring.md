@@ -14,7 +14,7 @@
 
 ## 整组任务
 
-按 group-execution.md 提交的整组任务只绑定一个监控，覆盖所有子任务；自动推进由远端进程负责。提交前向用户提供可复制的 SSH 观察命令。monitor-state.json 额外记录 group_id、整组主节点/目录、各事件流字节偏移及已通知源事件ID。默认每60分钟检查，24小时约24次；启动后立即核验，不向用户承诺即时通知。
+按 group-execution.md 提交的整组任务只绑定一个监控，覆盖所有子任务；自动推进由远端进程负责。提交前向用户提供可复制的 SSH 观察命令。monitor-state.json 额外记录 group_id、整组主节点/目录、各事件流字节偏移及已通知源事件ID。沿用上述频率，启动后立即核验；不承诺即时通知。
 
 先读取 group-summary.json、group-interrupted.json 和 group-state.json，再按游标读取新增 events.jsonl；终态必须核验全部子任务结果和释放证据。前置任务 FAILED 但 cleanup_verified 且整组继续时不单独通知；UNKNOWN 持续、BLOCKED、协调器中断或整组终态按下表通知。监控不执行后继启动或恢复。应用不支持指定频率时报告实际配置，不悄悄退回高频。
 

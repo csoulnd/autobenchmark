@@ -210,6 +210,10 @@ def _truncate_or_pad_text(tokenizer, text, target_len):
 
 def create_multi_prefix_dataset(tokenizer_path: str, input_len: int, number: int, save_path, prefix_flag, dp, repeat_rate, seed, prefix_num,
                                 length_mean=None, length_std=None, length_min=None, length_max=None):
+    random.seed(seed)
+    torch.manual_seed(seed)
+    Path = __import__("pathlib").Path
+    Path("picked_ids.txt").unlink(missing_ok=True)
     base_name = os.path.basename(os.path.normpath(tokenizer_path))
     use_variable_length = (
         (length_mean is not None and length_std is not None)
