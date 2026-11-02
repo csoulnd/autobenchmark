@@ -4,6 +4,10 @@ import copy
 import json
 from pathlib import Path
 import shutil
+import sys
+from datetime import datetime
+if '--validate-only' in sys.argv or '--check-dependencies' in sys.argv:
+    sys.dont_write_bytecode = True
 from stage_runtime import PACKAGE, digest, save
 
 
@@ -48,6 +52,33 @@ def validate(spec):
     return validate_task(spec)
 
 
+def check_dependencies():
+    """Check the declared requirements without installing or changing anything."""
+    from importlib.metadata import version
+    from packaging.requirements import Requirement
+    if sys.version_info < (3, 10):
+        raise ValueError('Python >=3.10 required; configuration NOT validated')
+    for line in (PACKAGE/'requirements.txt').read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        requirement = Requirement(line)
+        if requirement.marker and not requirement.marker.evaluate():
+            continue
+        installed = version(requirement.name)
+        if installed not in requirement.specifier:
+            raise ValueError(f'{requirement}: installed {installed}; configuration NOT validated')
+    from jsonschema import Draft202012Validator
+    Draft202012Validator.check_schema(load_json(PACKAGE/'schemas/job_spec.schema.json'))
+
+
+def candidate_ids(date):
+    if len(date) != 8 or not date.isascii() or not date.isdigit():
+        raise ValueError('--date must be YYYYMMDD in the user timezone')
+    datetime.strptime(date, '%Y%m%d')
+    for number in range(1, 1000):
+        yield f'{date}-{number:03d}'
+
+
 
 def plan(spec,root):
     s=normalize(spec); errors=validate(s)
@@ -75,12 +106,59 @@ def plan(spec,root):
 
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('--run-dir',type=Path,required=True); p.add_argument('--job-spec',type=Path)
+    p=argparse.ArgumentParser()
+    destination=p.add_mutually_exclusive_group()
+    destination.add_argument('--run-dir',type=Path)
+    destination.add_argument('--jobs-dir',type=Path,help='Auto allocate a job directory when job_id is omitted')
+    p.add_argument('--date',help='YYYYMMDD in user timezone, required for automatic IDs')
+    p.add_argument('--job-spec',type=Path)
+    mode=p.add_mutually_exclusive_group()
+    mode.add_argument('--check-dependencies',action='store_true')
+    mode.add_argument('--validate-only',action='store_true')
     a=p.parse_args()
     try:
-        if not a.run_dir.is_absolute() or a.job_spec is None: raise ValueError('Absolute run-dir and --job-spec required')
-        plan(load_json(a.job_spec),a.run_dir)
-        print(json.dumps({'stage':'plan_run','status':'PLANNED','message':'Plan saved; defaults and execution order recorded','artifacts':[str(a.run_dir/'plan.json')]}))
+        try:
+            check_dependencies()
+        except Exception as exc:
+            raise ValueError(f'Dependency check failed; configuration NOT validated: {exc}') from exc
+        if a.check_dependencies:
+            print(json.dumps({'stage':'plan_run','status':'DEPENDENCIES_OK','artifacts':[]}))
+            return 0
+        if a.job_spec is None: raise ValueError('--job-spec required')
+        spec=load_json(a.job_spec)
+        root=a.run_dir
+        if a.jobs_dir:
+            if not a.jobs_dir.is_absolute(): raise ValueError('Absolute --jobs-dir required')
+            if 'job_id' in spec: raise ValueError('Auto allocation requires job_id to be omitted; explicit IDs use --run-dir')
+            if not a.date: raise ValueError('--date required for automatic IDs')
+            for job_id in candidate_ids(a.date):
+                if not (a.jobs_dir/job_id).exists():
+                    spec['job_id']=job_id
+                    root=a.jobs_dir/job_id
+                    break
+            else: raise ValueError('No available job ID for date')
+        elif a.date:
+            raise ValueError('--date requires --jobs-dir')
+        errors=validate(normalize(spec))
+        if errors: raise ValueError('; '.join(errors))
+        if a.validate_only:
+            print(json.dumps({'stage':'plan_run','status':'VALIDATED','job_id':spec['job_id'],
+                'message':'Configuration valid; no plan frozen, ID not reserved, runtime not checked','artifacts':[]}))
+            return 0
+        if root is None or not root.is_absolute(): raise ValueError('Absolute --run-dir or --jobs-dir required')
+        if spec['state']!='ready': raise ValueError('Draft requires attended resolution')
+        if a.jobs_dir:
+            # Atomic reservation: concurrent planners cannot share an allocated ID.
+            a.jobs_dir.mkdir(parents=True,exist_ok=True)
+            for job_id in candidate_ids(a.date):
+                root=a.jobs_dir/job_id
+                try: root.mkdir()
+                except FileExistsError: continue
+                spec['job_id']=job_id
+                break
+            else: raise ValueError('No available job ID for date')
+        plan(spec,root)
+        print(json.dumps({'stage':'plan_run','status':'PLANNED','job_id':spec['job_id'],'message':'Plan saved; defaults and execution order recorded','artifacts':[str(root/'plan.json')]}))
         return 0
     except Exception as exc:
         print(json.dumps({'stage':'plan_run','status':'BLOCKED','message':str(exc),'artifacts':[]})); return 2

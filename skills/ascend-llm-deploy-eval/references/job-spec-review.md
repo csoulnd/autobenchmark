@@ -2,6 +2,10 @@
 
 当前只接受 job_spec v3 的拓扑结构，不兼容开发阶段旧平铺字段。参考 examples/job_spec.serial.json 和 examples/bindings.example.json；示例不包含真实服务器、私有路径或镜像摘要。
 
+配置生成后，先运行 plan_run.py --check-dependencies，再用 --validate-only 检查默认值补齐后的 Schema 和业务约束；依赖缺失或校验失败不得报告计划已冻结。仅校验允许 draft，但冻结仍要求 ready 且无未决项。仅校验不写任务目录或快照、不保留编号、不检查远端资源；使用 python3 -B 避免 Python 写入字节码缓存。
+
+新任务省略 job_id，使用 --jobs-dir 指定统一任务父目录、--date 指定用户时区日期（YYYYMMDD）。脚本分配 YYYYMMDD-NNN（001–999），跳过已有目录，冻结时原子创建目录；校验显示的候选编号可能在冻结时变化，以 PLANNED 输出为准。冻结失败留下的已保留目录不自动删除或复用。此分配只保证同一父目录内不重复；同一执行环境应使用统一父目录。显式 job_id 仍由 Schema 校验，使用 --run-dir。负载说明放 case ID，不拼入任务编号。
+
 ## 三类定义
 
 - deployments：每项为完整服务拓扑，包含 id、topology、model、runtime、instances、connections、endpoint。

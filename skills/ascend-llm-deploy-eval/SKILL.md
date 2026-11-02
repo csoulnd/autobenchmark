@@ -22,15 +22,26 @@ description: 以 job_spec 引导昇腾模型部署与性能测试，将自然语
 
 ## 执行入口
 
+先在规划端检查 Python（>=3.10）和 requirements.txt 依赖，再执行完整配置校验。依赖缺失表示尚未校验；仅校验成功不表示计划已冻结或现场预检通过。执行阶段读取冻结快照，不修改已冻结任务。
+
+新任务默认省略输入 job_spec 的 job_id，使用 --jobs-dir 和用户时区的 --date 自动分配编号；禁止沿用示例编号。脚本检查目录占用并在冻结时原子保留编号。已有显式编号仍可用 --run-dir，格式以 Schema 为准。
+
 参考[任务示例](examples/job_spec.serial.json)及[现场绑定示例](examples/bindings.example.json)填写实际需求；示例负载不构成执行授权。规划可在本地完成，完整任务目录上传到Linux协调端，同版本Skill包上传各执行节点，现场绑定在对应节点完成。
 
 ```sh
-python3 scripts/plan_run.py --job-spec /input/job_spec.json --run-dir /work/JOB_ID
+python3 scripts/plan_run.py --check-dependencies
+# 仅校验，不写文件、不保留编号；/work 为统一任务父目录
+python3 -B scripts/plan_run.py --job-spec /input/job_spec.json --jobs-dir /work --date YYYYMMDD --validate-only
+# 校验成功后冻结；从输出读取实际 job_id 和 plan.json 路径
+python3 scripts/plan_run.py --job-spec /input/job_spec.json --jobs-dir /work --date YYYYMMDD
+# 将下列 JOB_ID 替换为 PLANNED 输出中的实际编号
 python3 /work/JOB_ID/skill-snapshot/scripts/preflight.py --run-dir /work/JOB_ID --bindings /input/bindings.json
 bash /work/JOB_ID/run.sh
 # 独立收尾入口，仅在身份及执行状态已核验时使用：
 python3 /work/JOB_ID/skill-snapshot/scripts/finalize.py --run-dir /work/JOB_ID
 ```
+
+显式编号任务的兼容冻结命令为 `python3 scripts/plan_run.py --job-spec /input/job_spec.json --run-dir /work/JOB_ID`，不与自动分配命令重复执行。
 
 plan_run冻结需求、默认值、顺序及代码快照；draft或未决目标不能执行。preflight完成绑定并生成resolved及启动脚本，绑定完成前run.sh拒绝启动。新默认不修改已冻结快照。后台提交方式见任务监控；整组提交见整组执行，不提前启动其子任务。
 
