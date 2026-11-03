@@ -28,15 +28,28 @@ def prepare(request):
             if previous.get('request_sha256')!=digest(request):
                 raise ValueError('Frozen discovery request changed')
             return previous
-        snapshot=root/'skill-snapshot'
-        if not snapshot.exists():
-            shutil.copytree(PACKAGE,snapshot,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
-        network = discover_network(request['bindings'].get('network_interface'))
-        bases, _ = allocate_ports(request['port_requests'])
-        image = json.loads(command(['docker', 'image', 'inspect', request['image']]))[0]['Id']
-        tools = inspect_image_tools(image, job_id)
+        snapshot=PACKAGE  # One immutable runtime per job; no deployment copies.
+        findings={}
+        values={}
+        checks={
+            'network': lambda: discover_network(request['bindings'].get('network_interface')),
+            'ports': lambda: allocate_ports(request['port_requests'])[0],
+            'image': lambda: json.loads(command(['docker','image','inspect',request['image']]))[0]['Id'],
+            'npu_snapshot': lambda: command(['npu-smi','info']),
+        }
+        for name, check in checks.items():
+            try: values[name]=check()
+            except Exception as exc: findings[name]=repr(exc)
+        if 'image' in values:
+            try: values['tools']=inspect_image_tools(values['image'],job_id)
+            except Exception as exc: findings['tools']=repr(exc)
+        else: findings['tools']='BLOCKED: image discovery unavailable'
+        save(root/'discovery-report.json', {'findings':findings,'evidence':values,
+            'hardware_policy':'record_only'})
+        if findings: raise ValueError('Discovery findings: '+json.dumps(findings))
+        network,bases,image,tools=(values[k] for k in ('network','ports','image','tools'))
         result = {'request_sha256':digest(request),'network': network, 'port_bases': bases, 'image': image, 'tools': tools,
-                  'package': str(snapshot), 'npu_snapshot': command(['npu-smi', 'info']),
+                  'package': str(snapshot), 'npu_snapshot': values['npu_snapshot'],
                   'script_hashes': {p.name:__import__('hashlib').sha256(p.read_bytes()).hexdigest() for p in (PACKAGE/'scripts').glob('*.py')}}
         save(root/'discovery.json', result)
         return result

@@ -12,7 +12,7 @@ def prepare(source, destination):
     source = source.resolve()
     required = ['aisbench_test.py', 'generate_dataset.py', 'data_picker.py',
                 'default_api.py', 'save_file.py', 'cal_prefix_hit_rate.py',
-                'GSM8K.jsonl', 'config.py', 'dataset_cache.py']
+                'GSM8K.jsonl', 'config.py', 'dataset_cache.py', 'log_format.py']
     for name in required:
         if not (source / name).is_file():
             raise ValueError('Missing tool source: ' + name)
@@ -48,7 +48,10 @@ def prepare(source, destination):
         '**_event_json.loads(_event_os.environ["BENCH_EVENT_CONTEXT"]))\n'
         'def _benchmark_run(*args, **kwargs):\n'
         '    try:\n'
-        '        return subprocess.run(*args, **kwargs)\n'
+        '        result = subprocess.run(*args, **kwargs)\n'
+        '        from log_format import normalize_log\n'
+        '        normalize_log("aisbench.log")\n'
+        '        return result\n'
         '    except Exception:\n'
         '        if _event_stage:\n'
         '            _benchmark_event(_event_stage, "fail")\n'
@@ -62,14 +65,16 @@ def prepare(source, destination):
         '        snapshot.write(json.dumps({"time": time.time(), "query": query_tokens, '
         '"external_query": query_tokens_external, "hit": hit_tokens, '
         '"external_hit": hit_tokens_external}) + "\\n")\n' + metrics_return)
+    patched = 'import sys, os\nsys.path.append(' + repr(str(source)) + ')\nos.environ["BENCH_TOOL_SOURCE"] = ' + repr(str(source)) + '\n' + patched
     destination.mkdir(parents=True)
     manifest = {}
     for name in required:
-        shutil.copy2(source / name, destination / name)
+        if name in ('aisbench_test.py', 'config.py'):
+            shutil.copy2(source / name, destination / name)
         manifest[name] = {'source_sha256': hashlib.sha256((source / name).read_bytes()).hexdigest()}
     (destination / 'aisbench_test.py').write_text(patched, encoding='utf-8')
     for name in required:
-        manifest[name]['copied_sha256'] = hashlib.sha256((destination / name).read_bytes()).hexdigest()
+        manifest[name]['copied_sha256'] = hashlib.sha256((destination / name if (destination / name).exists() else source / name).read_bytes()).hexdigest()
     (destination / 'source-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     return manifest
 

@@ -11,7 +11,7 @@
 5. **实际提交前**向用户给出以下可复制观察命令，填入真实主节点与路径并正确 shell 引号。用户可以在终端观察进度，不要求其开启终端才运行任务。
 
 ```sh
-ssh -t user@main.example 'python3 /work/GROUP/skill-snapshot/scripts/watch_events.py --run-dir /work/GROUP'
+ssh -t user@main.example 'python3 /work/GROUP/common/skill-snapshot/scripts/watch_events.py --run-dir /work/GROUP'
 # 或原始事件视图：
 ssh -t user@main.example 'tail -n 30 -F /work/GROUP/logs/events.jsonl'
 ```

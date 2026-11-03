@@ -11,6 +11,7 @@ from service_process import members,ticks
 from validate_case import validate
 from cache_reset import reset_instances
 from task_events import emit
+from tool_links import cleanup as cleanup_links
 
 
 def run(root,folder):
@@ -59,24 +60,26 @@ def run(root,folder):
             '--prefix_num',str(case['prefix_num']),'--repeat_rate',str(case['prefix_ratio']),'--prefix_test',
             '--seed',str(case['seed']),'--dp',str(spec['benchmark']['prefill_dp']),'--npu_num',str(len(service['npu_ids']))]
         (folder/'command.json').write_text(json.dumps(argv))
-        with (folder/'console.log').open('w') as log:
+        with (folder/'runner-diagnostics.log').open('w') as log:
             process=subprocess.Popen(argv,cwd=tool,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,
-                env={**os.environ, 'BENCH_DATASET_CACHE':str(Path(spec.get('storage', {}).get('root', root))/'dataset-cache'), 'BENCH_EVENT_ROOT':str(root), 'BENCH_EVENT_CONTEXT':json.dumps(context),
-                     'PYTHONPATH':str(root/'scripts')+os.pathsep+os.environ.get('PYTHONPATH','')})
+                env={**os.environ, 'BENCH_LINK_MANIFEST':str(folder/'tool-links.json'), 'BENCH_DATASET_CACHE':str(Path(spec.get('storage', {}).get('root', root))/'dataset-cache'), 'BENCH_EVENT_ROOT':str(root), 'BENCH_EVENT_CONTEXT':json.dumps(context),
+                     'PYTHONPATH':str(Path(__file__).parent)+os.pathsep+os.environ.get('PYTHONPATH','')})
             identity={'pid':process.pid,'start_ticks':ticks(process.pid)}
             (folder/'client.json').write_text(json.dumps(identity))
             deadline=time.monotonic()+case['timeout_seconds']
             while True:
                 if spec.get('storage'):
                     from disk_guard import check as disk_check
-                    disk_check(spec['storage']['root'], spec['storage']['subtasks'], folder.parent)
+                    disk_check(spec['storage']['root'], spec['storage']['subtasks'], tool.resolve().parent.parent)
                 remaining=deadline-time.monotonic()
                 if remaining<=0: raise subprocess.TimeoutExpired(argv,case['timeout_seconds'])
                 try:
                     code=process.wait(timeout=min(30,remaining)); break
                 except subprocess.TimeoutExpired:
                     continue
-        if code: raise RuntimeError(f'Benchmark exited {code}; see console.log')
+        if code == 0:
+            (folder/'runner-diagnostics.log').unlink()
+        if code: raise RuntimeError(f'Benchmark exited {code}; see tool/aisbench.log and runner-diagnostics.log')
         for port in reset_targets:
             (folder/f'metrics-{port}-after.txt').write_text(http(port,'/metrics'))
         event('validate', 'doing')
@@ -99,11 +102,7 @@ def run(root,folder):
             if members(process.pid):
                 os.killpg(process.pid,signal.SIGKILL); time.sleep(1)
                 if members(process.pid): errors.append('Client process group remains')
-        for link in links:
-            try:
-                if link.is_symlink() and link.resolve().is_relative_to(folder.resolve()): link.unlink()
-                elif link.exists() or link.is_symlink(): raise ValueError('Tool link ownership changed: '+str(link))
-            except Exception as exc: errors.append(str(exc))
+        errors.extend(cleanup_links(links, folder/'tool-links.json'))
         (folder/'cleanup.json').write_text(json.dumps({'released':not errors,'errors':errors,'level':'case'},indent=2))
     event('client_cleanup', 'done' if not errors else 'fail')
     summary={'status':'PASSED' if result and not errors else 'FAILED','error':failure,'cleanup_errors':errors,'seconds':time.monotonic()-started}

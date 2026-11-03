@@ -19,6 +19,7 @@ class LifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
             for name in ['scripts','logs','results']:(root/name).mkdir()
+            runtime.save(root/'deployment-artifacts.json', {'id':'test-01','path':str(root/'deployments/test-01')})
             runtime.update(root,service='READY',container_id='test',smoke_identity={'identity':1})
             calls=[]
             def attempt(argv,**kwargs):

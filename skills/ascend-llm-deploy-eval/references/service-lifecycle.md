@@ -4,7 +4,7 @@
 
 plan_run 固定 sub_task 顺序并生成 run.sh；preflight 在有人值守时完成现场绑定。run.sh 开始后，每个 sub_task 调用 deploy → evaluate → finalize。deploy 每次检查服务状态；调用该阶段不代表必须重新部署。
 
-协调端在 services/<deployment_id>/service-state.json 保存整套服务状态；节点各容器目录的 run_state.json 保存本地服务状态，执行入口节点在其中的 cases[sub_task_id] 单独记录 case 状态。整组任务状态在 task-state.json，日志与结果按部署、case 和 attempt 分开。
+协调端在 .internal/services/<deployment_id>/service-state.json 保存整套服务状态；节点各容器目录的 run_state.json 保存本地服务状态，执行入口节点在其中的 cases[sub_task_id] 单独记录 case 状态。整组任务状态在 task-state.json，日志与结果按部署、case 和 attempt 分开。
 
 | 状态 | 行为 |
 |---|---|
@@ -33,7 +33,7 @@ plan_run 固定 sub_task 顺序并生成 run.sh；preflight 在有人值守时�
 
 整组循环持有任务锁，各部署操作另持有容器锁。前缀重置、工具配置与负载都在锁内执行。不是并行任务调度器，也不自动抢占其他用户资源。
 
-部署和 case 运行异常默认最多额外重试3次。case 预算按 sub_task_id 分离；显式释放后重新建立服务时记录新的部署尝试批次。重试前核验服务身份、客户端清理及缓存隔离条件。耗尽后当前子任务失败保留；record_only 核验客户端清理和所有节点服务，健康时继续复用，确认退出时释放整套部署服务后置为 RELEASED，让下一子任务重建。失联、身份不明、健康检查不通过但未确认退出或释放未核验时置 UNKNOWN 并阻塞，不推断失联节点已退出。
+部署和 case 运行异常默认最多额外重试3次。case 预算按 sub_task_id 分离；显式释放后重新建立服务时记录新的部署尝试批次。重试前核验服务身份、客户端清理及缓存隔离条件。耗尽后当前子任务失败保留，统一全量释放本任务部署容器、服务及客户端；释放核验通过后继续下一 subcase 并重新部署。清理未核验时阻塞相关资源。
 
 遇到客户端清理不明或未知状态，停止相关循环并进入适用的任务收尾。中断后仍为 RUNNING 的 case 不自动恢复，避免重放未知请求。服务与容器停止不删除共享镜像、权重或历史证据。
 
@@ -74,3 +74,9 @@ logs/config-storage-events.jsonl 记录 task_normalized、bindings_resolved、de
 每节点任务限额=1GiB+4GiB×本节点subtask数，单subtask结果限额4GiB，文件系统空闲保留10GiB。预检/部署检查剩余预算，压测入口在attempt前及客户端运行时每30秒检查；其他节点运行中尚无独立周期检查。超限结束客户端，停止服务后按record_only处理；后继重新检查空间，不自动删除保留的结果。共享数据集计入任务总额，轮询检查不是硬配额。
 
 释放前的状态、快照写入采用弱保护，OSError记录为recording_errors，不阻止资源操作；归属与身份检查不能跳过。容器停止后残留NPU进程只在本次捕获的PID和start_ticks一致时有限次TERM/KILL并复查，身份不明或清理失败仍阻塞。此保护不承诺在任意损坏状态下自动恢复。
+
+## 执行环境回归检查
+
+修改容器内 runner 依赖时，在只包含实际分发脚本的隔离目录执行导入和存储检查，不能用源码目录的 PYTHONPATH 掩盖缺失模块。重新部署的端口探测使用 SO_REUSEADDR 兼容连接回收状态；绑定仍失败时保存 ss 监听与归属证据，不把 errno=98 直接认定为其他任务占用或自动杀进程。
+
+端口复用检查最多等待60秒，失败以可重试的 PortUnavailable 上报，不能包装为不可重试的配置 ValueError。容器停止后，NPU进程与监听进程分别核验；监听残留仅在本次容器快照PID和start_ticks匹配时TERM/KILL并复查，记录全部TCP状态以区分LISTEN与TIME_WAIT。未知监听不按“空进程”清理。真实外部监听持续冲突以结构化 PortUnavailable 传回协调器；当前部署全部节点释放核验通过后，在原部署重试预算内为全部节点重新分配端口并重新编译拓扑。新现场配置保存在 port-generations/<generation>，成功后更新 resolved-cluster.json 与内存登记，重新启动并冒烟；旧配置和释放证据保留，不修改冻结需求或旧脚本。分配失败、预算耗尽或释放不明则停止，不清理外部监听。

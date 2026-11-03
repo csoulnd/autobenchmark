@@ -36,7 +36,7 @@ def release(root,policy,scope):
         c=inspect_owned(s,data['container_id'])
         if c['Image']!=data['image_id']: raise ValueError('Registered image changed')
         if policy=='stop_service' and c['State']['Running']:
-            evidence['processes']=json.loads(command(['docker','exec',c['Id'],'python3',str(root/'scripts/service_process.py'),'stop',str(root)],timeout=180))
+            evidence['processes']=json.loads(command(['docker','exec',c['Id'],'python3',str(Path(__file__).with_name('service_process.py')),'stop',str(root)],timeout=180))
         elif policy=='stop_container':
             snapshot_text=''
             identities={}
@@ -65,8 +65,27 @@ def release(root,policy,scope):
             record((root/'logs/npu-after-finalize.txt').write_text,npu)
             sockets=command(['ss','-lntp'])
             record((root/'logs/ports-after-finalize.txt').write_text,sockets)
-            if known.intersection(re.findall(r'pid=(\d+)',sockets)):
+            remaining = known.intersection(re.findall(r'pid=(\d+)', sockets))
+            for pid_text in remaining:
+                pid = int(pid_text)
+                if not identities.get(pid) or ticks(pid) != identities[pid]:
+                    raise RuntimeError('Residual listener identity not verified')
+                try: os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError: pass
+            if remaining:
+                time.sleep(1)
+                for pid_text in remaining:
+                    pid = int(pid_text)
+                    if ticks(pid) == identities[pid] and identities[pid]:
+                        try: os.kill(pid, signal.SIGKILL)
+                        except ProcessLookupError: pass
+                time.sleep(1)
+                sockets = command(['ss', '-lntp'])
+                record((root/'logs/ports-after-finalize.txt').write_text, sockets)
+            if known.intersection(re.findall(r'pid=(\d+)', sockets)):
                 raise RuntimeError('Owned process still has listening socket')
+            evidence['port_states'] = command(['ss', '-antp'])
+
             evidence['owned_npu_processes_remaining']=[]
             evidence['owned_listeners_remaining']=[]
             processes=root/'service-processes.json'

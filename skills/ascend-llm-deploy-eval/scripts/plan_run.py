@@ -87,19 +87,21 @@ def plan(spec,root):
     result={'job_spec':s,'job_spec_sha256':digest(s),'status':'PLANNED','runtime_verified':False}
     if s['schema_version']=='3.0':
         result['sequence']=s['sub_tasks']
-    if (root/'plan.json').exists() and load_json(root/'plan.json')!=result:
+    if (root/'common/plan.json').exists() and load_json(root/'common/plan.json')!=result:
         raise ValueError('Existing plan differs; use a new job_id')
     root.mkdir(parents=True,exist_ok=True)
-    for name in ['configs','scripts','logs','results']:(root/name).mkdir(exist_ok=True)
-    save(root/'plan.json',result); save(root/'job_spec.json',s)
+    (root/'common').mkdir(exist_ok=True)
+    for case in s['cases']:
+        save(root/'cases'/case['id']/'case.json', case)
+    save(root/'common/plan.json',result); save(root/'common/job_spec.json',s)
     # Preserve the complete executable package used by this job.
-    if not (root/'skill-snapshot').exists():
-        shutil.copytree(PACKAGE,root/'skill-snapshot',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+    if not (root/'common/skill-snapshot').exists():
+        shutil.copytree(PACKAGE,root/'common/skill-snapshot',ignore=shutil.ignore_patterns('__pycache__','*.pyc','test_*.py','references','examples','SKILL.md','agents'))
     if s['schema_version']=='3.0':
         # Relative snapshot entry makes the generated task package transferable.
         (root/'run.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\n'
             'RUN_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"\n'
-            'exec python3 "$RUN_DIR/skill-snapshot/scripts/run_task.py" --run-dir "$RUN_DIR" "$@"\n',encoding='utf-8',newline='\n')
+            'exec python3 "$RUN_DIR/common/skill-snapshot/scripts/run_task.py" --run-dir "$RUN_DIR" "$@"\n',encoding='utf-8',newline='\n')
         from task_runtime import storage_event
         storage_event(root,'task_normalized',task_id=s['job_id'],plan_sha256=result['job_spec_sha256'])
     return result
@@ -158,7 +160,7 @@ def main():
                 break
             else: raise ValueError('No available job ID for date')
         plan(spec,root)
-        print(json.dumps({'stage':'plan_run','status':'PLANNED','job_id':spec['job_id'],'message':'Plan saved; defaults and execution order recorded','artifacts':[str(root/'plan.json')]}))
+        print(json.dumps({'stage':'plan_run','status':'PLANNED','job_id':spec['job_id'],'message':'Plan saved; defaults and execution order recorded','artifacts':[str(root/'common/plan.json')]}))
         return 0
     except Exception as exc:
         print(json.dumps({'stage':'plan_run','status':'BLOCKED','message':str(exc),'artifacts':[]})); return 2

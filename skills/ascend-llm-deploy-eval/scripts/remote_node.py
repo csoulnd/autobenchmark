@@ -5,6 +5,10 @@ import shlex
 import subprocess
 
 
+class PortConflict(RuntimeError):
+    pass
+
+
 class RemoteNode:
     def __init__(self, host, script, run_dir, job_id, fingerprint, scripts_sha256=None):
         if not re.fullmatch(r'(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9][A-Za-z0-9_.-]*', host):
@@ -23,6 +27,8 @@ class RemoteNode:
         except (ValueError, IndexError):
             raise RuntimeError('Node response unavailable: '+result.stderr[-2000:])
         if result.returncode or response.get('status') != 'PASSED':
+            if response.get('error_type') == 'PortUnavailable':
+                raise PortConflict('Node port unavailable: '+json.dumps(response))
             if str(response.get('error','')).startswith('ValueError('):
                 raise ValueError('Node rejected operation: '+json.dumps(response))
             raise RuntimeError('Node operation failed: '+json.dumps(response))

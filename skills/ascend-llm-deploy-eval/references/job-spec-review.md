@@ -48,4 +48,4 @@ plan.json 固定需求和 sub_task 顺序；resolved-cluster.json 保存拓扑�
 
 规范化阶段移除参考命令中的ASCEND_SLOG_PRINT_TO_STDOUT与ASCEND_GLOBAL_LOG_LEVEL赋值；计划校验拒绝在launch.env/bootstrap中显式设置，避免启动细粒度算子日志。环境加载脚本仍需审阅，不保证外部脚本没有间接设置。
 
-节点preflight-report.json记录检查时间、分组结果、失败原因及未执行项目；实际资源值查preflight-evidence.json、discovery.json。检查分组覆盖磁盘、镜像、挂载、设备、权重、tokenizer、工具、网络、资源占用或服务复用。权重检查为索引分片存在性，不是全文件内容校验。失败即停止该节点检查，后续项目不计为通过。现有总体提交条件保持：冻结计划与节点登记一致、预检成功、任务未重复执行；终端只输出总体结论与失败原因。
+节点preflight-report.json记录检查时间、分组结果、失败原因及未执行项目；实际资源值查preflight-evidence.json、discovery.json。检查分组覆盖磁盘、镜像、挂载、设备、权重、tokenizer、工具、网络、资源占用或服务复用。权重检查为索引分片存在性，不是全文件内容校验。独立检查项全部执行并汇总异常，依赖缺失项目标为阻塞，不能计为通过。现有总体提交条件保持：冻结计划与节点登记一致、预检成功、任务未重复执行；终端只输出总体结论与失败原因。

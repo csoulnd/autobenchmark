@@ -48,7 +48,7 @@ def validate(plan):
 
 
 def call(task, action, **values):
-    script = task.get('script', str(Path(task['run_dir'])/'skill-snapshot/scripts/group_worker.py'))
+    script = task.get('script', str(Path(task['run_dir'])/'common/skill-snapshot/scripts/group_worker.py'))
     request = {**values, 'run_dir': task['run_dir'], 'action': action}
     if 'plan_sha256' in task:
         request['plan_sha256'] = task['plan_sha256']
@@ -179,7 +179,7 @@ def main():
             for task in plan['tasks']:
                 if call(task, 'probe')['state'] != 'PENDING':
                     raise ValueError('Task already executed or state uncertain')
-            snapshot = root/'skill-snapshot'
+            snapshot = root/'common/skill-snapshot'
             if snapshot.exists():
                 raise ValueError('Existing group snapshot; inspect before resubmission')
             shutil.copytree(Path(__file__).resolve().parents[1], snapshot, ignore=shutil.ignore_patterns('__pycache__','*.pyc'))

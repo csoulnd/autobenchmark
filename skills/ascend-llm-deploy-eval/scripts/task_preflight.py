@@ -190,8 +190,7 @@ def create_execution(spec, dep, root, index, bindings, network, port_bases, port
     context = {'model': model, 'network': network, 'ports': port_bases,
                'paths': dict(bindings.get('paths', {})), 'run_dir': str(child), 'task_dir': str(root)}
     if '{{paths.proxy_program}}' in json.dumps(dep['commands']):
-        proxy=child/'scripts/proxy.py'
-        shutil.copy2(PACKAGE/'assets/pd-proxy/load_balance_proxy_server_example.py',proxy)
+        proxy=PACKAGE/'assets/pd-proxy/load_balance_proxy_server_example.py'
         context['paths']['proxy_program']=str(proxy)
     commands = []
     for item in dep['commands']:

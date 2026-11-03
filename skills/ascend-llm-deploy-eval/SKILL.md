@@ -35,10 +35,10 @@ python3 -B scripts/plan_run.py --job-spec /input/job_spec.json --jobs-dir /work 
 # 校验成功后冻结；从输出读取实际 job_id 和 plan.json 路径
 python3 scripts/plan_run.py --job-spec /input/job_spec.json --jobs-dir /work --date YYYYMMDD
 # 将下列 JOB_ID 替换为 PLANNED 输出中的实际编号
-python3 /work/JOB_ID/skill-snapshot/scripts/preflight.py --run-dir /work/JOB_ID --bindings /input/bindings.json
+python3 /work/JOB_ID/common/skill-snapshot/scripts/preflight.py --run-dir /work/JOB_ID --bindings /input/bindings.json
 bash /work/JOB_ID/run.sh
 # 独立收尾入口，仅在身份及执行状态已核验时使用：
-python3 /work/JOB_ID/skill-snapshot/scripts/finalize.py --run-dir /work/JOB_ID
+python3 /work/JOB_ID/common/skill-snapshot/scripts/finalize.py --run-dir /work/JOB_ID
 ```
 
 显式编号任务的兼容冻结命令为 `python3 scripts/plan_run.py --job-spec /input/job_spec.json --run-dir /work/JOB_ID`，不与自动分配命令重复执行。
@@ -59,3 +59,19 @@ plan_run冻结需求、默认值、顺序及代码快照；draft或未决目标�
 性能适配器及必要数据在assets/aisbench-prefix，PD代理及许可证在assets/pd-proxy。配置存储仅有事件埋点，无配置库、版本检索或自动选配；事件定义见生命周期。
 
 保留计划、现场绑定、代码与启动脚本快照、阶段/状态日志、原始结果及释放记录。本地产物使用D:/autobenchmark-local/，真实连接信息与任务产物均在仓库外；仓库示例只用占位资源，docs只放设计与工程计划。自动流程的归档要求不强加给手动操作。
+
+
+## 固定提交与运行约定
+
+Agent 负责 job_spec/bindings 语义审阅，代码负责 Schema 和业务约束校验。使用 `python scripts/submit_job.py prepare --host HOST --remote-root /work --job-spec FILE --bindings FILE --date YYYYMMDD` 固化校验、上传摘要核验、冻结及预检；prepare 不启动测试。汇总预检结果并完成有人值守决策后，用 `submit_job.py submit --host HOST --remote-root RUN_DIR` 提交，`status` 同参数查询已有状态。规划端需 Python >=3.10、requirements.txt 及 SSH/SCP。
+
+预检全量执行独立项目并汇总；依赖缺失的项目明确阻塞，不算通过。硬件仅记录并上报 `npu-smi info`，不深入研究或追加计算探针。资源占用、归属和必要依赖仍须核验；提交前处理预检决策。
+
+执行故障有限次重试；耗尽后全量清理本任务部署，核验释放后继续下一 subcase。清理无法核验时阻塞相关资源。查询优先 task-state.json/summary.json，必要时补充 npu-smi info。默认仅报告任务结论、异常、清理与产物位置，用户询问时才展示性能数据。先维护本地代码仓；用户要求同步时，备份安装副本后同步并核验文件摘要。
+
+
+任务打包、目录布局和占用边界见 [Job存储](references/job-storage.md)。prepare 在本地冻结完整 job 包，远端每个目标只解压一份；不再使用独立 inputs/packages 暂存目录。
+
+## 测试产物读取与归档
+
+新任务按[Job存储](references/job-storage.md)中的deployment/sub_task组织主要产物。优先查看sub_task的tool/aisbench.log打屏结果及工具原始输出；异常时根据部署运行编号和时间区间查看连续服务日志。辅助脚本与内部状态不是长期归档主体，但释放核验前保留。新任务直接使用 common、deployments、cases、sub_tasks 目录，不创建旧结果路径的兼容链接。历史冻结任务保留自身路径。

@@ -29,11 +29,11 @@ class PlanTests(unittest.TestCase):
     def test_idempotent_and_conflicting_plan(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
-            planner.plan(self.spec,root); before=(root/'plan.json').read_bytes()
-            planner.plan(self.spec,root); self.assertEqual(before,(root/'plan.json').read_bytes())
+            planner.plan(self.spec,root); before=(root/'common/plan.json').read_bytes()
+            planner.plan(self.spec,root); self.assertEqual(before,(root/'common/plan.json').read_bytes())
             self.spec['cases'][0]['formal_requests']=65
             with self.assertRaises(ValueError): planner.plan(self.spec,root)
-            self.assertEqual(before,(root/'plan.json').read_bytes())
+            self.assertEqual(before,(root/'common/plan.json').read_bytes())
     def test_deployment_not_bound_to_image_or_model(self):
         self.spec['deployments'][0]['runtime']['image']='candidate:test'
         self.spec['deployments'][0]['model']['served_name']='alternate'

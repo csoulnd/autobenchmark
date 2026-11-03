@@ -7,7 +7,7 @@ import re
 import subprocess
 import time
 from stage_runtime import save, digest, http, command
-from remote_node import RemoteNode
+from remote_node import RemoteNode, PortConflict
 from topology import compile_deployment
 from task_events import emit
 
@@ -51,23 +51,35 @@ def container_pools(spec, bindings):
     return assignments
 
 
-def preflight(root, spec, bindings):
+def preflight(root, spec, bindings, *, deployment_id=None, generation=None):
     pools=container_pools(spec,bindings)
     result = {'plan_sha256': digest(spec), 'bindings_sha256': digest(bindings), 'deployments': {}}
+    if generation is not None:
+        result = json.loads((root/'resolved-cluster.json').read_text())
+    failures=[]
     for dep_index, dep in enumerate(spec['deployments'], 1):
+        if deployment_id is not None and dep['id'] != deployment_id:
+            continue
         used = sorted({i['placement']['node'] for i in dep['instances']})
         nodes = {}
         for slot in used:
             binding = bindings['nodes'][slot]
             request_ports = {i['id']+'.'+p: width for i in dep['instances'] if i['placement']['node'] == slot
                              for p, width in i['ports'].items()}
-            node_root = str(Path(binding['work_dir'])/spec['job_id']/dep['id'])
-            discovered = prepare_call(binding, {'action': 'discover', 'run_dir': node_root,
-                'job_id': spec['job_id']+f'-{dep_index:03}', 'image': dep['runtime']['image'],
-                'bindings': binding, 'port_requests': request_ports})
-            nodes[slot] = {**discovered, 'root': node_root, 'ports': {i['id']:
-                {name: discovered['port_bases'][i['id']+'.'+name] for name in i['ports']}
-                for i in dep['instances'] if i['placement']['node'] == slot}}
+            node_root = str(Path(binding['work_dir'])/spec['job_id']/'.internal'/dep['id'])
+            if generation is not None:
+                node_root = str(Path(node_root)/'port-generations'/generation)
+            try:
+                discovered = prepare_call(binding, {'action': 'discover', 'run_dir': node_root,
+                    'job_id': spec['job_id']+f'-{dep_index:03}', 'image': dep['runtime']['image'],
+                    'bindings': binding, 'port_requests': request_ports})
+                nodes[slot] = {**discovered, 'root': node_root, 'ports': {i['id']:
+                    {name: discovered['port_bases'][i['id']+'.'+name] for name in i['ports']}
+                    for i in dep['instances'] if i['placement']['node'] == slot}}
+            except Exception as exc:
+                failures.append({'deployment':dep['id'],'node':slot,'error':repr(exc)})
+        if len(nodes)!=len(used):
+            continue
         compiled = compile_deployment(dep, nodes)
         registered = {'compiled': compiled, 'nodes': nodes, 'groups': {}}
         result['deployments'][dep['id']] = registered
@@ -91,12 +103,17 @@ def preflight(root, spec, bindings):
                           'storage': {'root':pools[(dep['id'],group['node'])]['task_root'],
                            'subtasks':sum(1 for t in spec['sub_tasks'] if any(bindings['nodes'][i['placement']['node']]['host']==binding['host'] for d in spec['deployments'] if d['id']==t['deployment_id'] for i in d['instances']))},
                           'container_pool':pools[(dep['id'],group['node'])]}
-            reply = prepare_call({**binding,'package':node['package']}, {'action': 'render', 'run_dir': node['root'],
-                'job_id': local_spec['job_id'], 'spec': local_spec, 'deployment': flat, 'index': group_index,
-                'bindings': binding, 'ports': group['ports']})
-            registered['groups'][key] = {**reply, 'host': binding['host'],
-                'script': str(Path(node['package'])/'scripts/node_rpc.py')}
-            save(root/'preflight-progress.json', result)
+            try:
+                reply = prepare_call({**binding,'package':node['package']}, {'action': 'render', 'run_dir': node['root'],
+                    'job_id': local_spec['job_id'], 'spec': local_spec, 'deployment': flat, 'index': group_index,
+                    'bindings': binding, 'ports': group['ports']})
+                registered['groups'][key] = {**reply, 'host': binding['host'],
+                    'script': str(Path(node['package'])/'scripts/node_rpc.py')}
+                save(root/'preflight-progress.json', result)
+            except Exception as exc:
+                failures.append({'deployment':dep['id'],'group':key,'error':repr(exc)})
+    save(root/'preflight-findings.json', {'status':'REVIEW_REQUIRED' if failures else 'PASSED','findings':failures})
+    if failures: raise ValueError('Attended preflight decision required; see preflight-findings.json')
     save(root/'resolved-cluster.json', result)
     return {'status': 'PASSED', 'message': 'All topology nodes prepared', 'artifacts': [str(root/'resolved-cluster.json')]}
 
@@ -189,6 +206,18 @@ def deploy(root, spec, deployment):
             save(folder/'failure.json', {'error':repr(exc),'releases':released})
             if any(x['status'] != 'PASSED' for x in released.values()):
                 raise RuntimeError('Node cleanup unverified; no retry') from exc
+            if isinstance(exc, PortConflict) and attempt < spec['execution']['max_retries']+1:
+                task_root = Path(spec['_event_root'])
+                bindings = json.loads((task_root/'common/inputs/bindings.json').read_text(encoding='utf-8-sig'))
+                clean_spec = {k:v for k,v in spec.items() if not k.startswith('_')}
+                dep_id = spec['_event_context']['deployment_id']
+                generation = str(time.time_ns())
+                save(folder/'port-reallocation.json', {'status':'PREPARING','generation':generation,'previous':deployment})
+                preflight(task_root, clean_spec, bindings, deployment_id=dep_id, generation=generation)
+                replacement = json.loads((task_root/'resolved-cluster.json').read_text())['deployments'][dep_id]
+                deployment.clear(); deployment.update(replacement)
+                nodes = clients(deployment)
+                save(folder/'port-reallocation.json', {'status':'PASSED','generation':generation,'groups':deployment['groups']})
             if isinstance(exc,ValueError) or attempt == spec['execution']['max_retries']+1:
                 raise
             if spec.get('_event_context'):
@@ -203,22 +232,10 @@ def finalize(root, spec, resolved):
 
 
 def reconcile_failure(root, deployment, case_id):
-    try:
-        observations={key:node.call('assess_failure',case_id=case_id) for key,node in clients(deployment).items()}
-    except Exception as exc:
-        save(root/'service-state.json',{'status':'UNKNOWN','error':repr(exc)})
-        return {'continue':False,'error':repr(exc)}
-    states=[v['service'] for v in observations.values()]
-    if not states or 'UNKNOWN' in states:
-        save(root/'service-state.json',{'status':'UNKNOWN'})
-        return {'continue':False,'nodes':observations}
-    if all(v=='READY' for v in states):
-        save(root/'service-state.json',{'status':'READY','identities':{k:v['identity'] for k,v in observations.items()}})
-        return {'continue':True,'nodes':observations}
-    releases=release_all(deployment,'stop_service','failed_sub_task')
-    safe=all(v['status']=='PASSED' for v in releases.values())
-    save(root/'service-state.json',{'status':'RELEASED' if safe else 'UNKNOWN'})
-    return {'continue':safe,'nodes':observations,'releases':releases}
+    releases=release_all(deployment, 'stop_container', 'failed_sub_task')
+    safe=bool(releases) and all(v['status']=='PASSED' for v in releases.values())
+    save(root/'service-state.json', {'status':'RELEASED' if safe else 'UNKNOWN'})
+    return {'continue':safe, 'releases':releases}
 
 
 def run(root, spec, resolved):
@@ -242,7 +259,7 @@ def run(root, spec, resolved):
             dep = resolved['deployments'][dep_id]
             definition = next(d for d in spec['deployments'] if d['id'] == dep_id)
             folder = root/'sub_tasks'/subtask['id']; folder.mkdir(parents=True, exist_ok=True)
-            deployment_root = root/'services'/dep_id; deployment_root.mkdir(parents=True, exist_ok=True)
+            deployment_root = root/'.internal/services'/dep_id; deployment_root.mkdir(parents=True, exist_ok=True)
             # case ID in result artifacts identifies the execution, not the reusable load definition.
             case = copy.deepcopy(next(c for c in spec['cases'] if c['id'] == subtask['case_id']))
             case['id'] = subtask['id']
@@ -268,12 +285,7 @@ def run(root, spec, resolved):
             except Exception as exc:
                 emit(root, failure_stage, 'fail', error=repr(exc), **context)
                 emit(root, 'reconcile', 'doing', **context)
-                if 'Storage budget exceeded' in str(exc):
-                    releases=release_all(dep,'stop_service','storage_limit')
-                    recovery={'continue':all(v['status']=='PASSED' for v in releases.values()),'releases':releases}
-                    save(deployment_root/'service-state.json',{'status':'RELEASED' if recovery['continue'] else 'UNKNOWN'})
-                else:
-                    recovery=reconcile_failure(deployment_root,dep,subtask['id'])
+                recovery=reconcile_failure(deployment_root,dep,subtask['id'])
                 emit(root, 'reconcile', 'done' if recovery['continue'] else 'blocked', **context)
                 results[subtask['id']] = {'status':'FAILED','error':repr(exc),'failure_stage':failure_stage,
                     'on_failure':subtask['on_failure'],'phase_id':subtask['phase_id'],'reconciliation':recovery}
@@ -286,6 +298,8 @@ def run(root, spec, resolved):
                 from task_runtime import storage_event
                 storage_event(root,'case_finished',sub_task_id=subtask['id'],case_id=subtask['case_id'],deployment_id=dep_id,status=results[subtask['id']]['status'])
             next_dep = spec['sub_tasks'][index+1]['deployment_id'] if index+1 < len(spec['sub_tasks']) else None
+            if results[subtask['id']].get('reconciliation', {}).get('continue'):
+                continue
             policy = subtask['after_case']
             if next_dep and next_dep != dep_id and policy=='keep_service':
                 policy='stop_service'

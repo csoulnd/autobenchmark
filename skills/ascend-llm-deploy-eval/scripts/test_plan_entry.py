@@ -38,7 +38,7 @@ class EntryTests(unittest.TestCase):
         code, result = self.invoke(*args)
         self.assertEqual(code, 0, result)
         self.assertEqual(result['job_id'], '20261102-002')
-        frozen = plan_run.load_json(jobs/'20261102-002/plan.json')
+        frozen = plan_run.load_json(jobs/'20261102-002/common/plan.json')
         self.assertEqual(frozen['job_spec']['job_id'], result['job_id'])
         self.assertTrue((jobs/'20261102-002/run.sh').exists())
 

@@ -6,7 +6,7 @@ from stage_runtime import digest, locked
 
 
 def storage_event(root, event, **fields):
-    path = root/'logs/config-storage-events.jsonl'
+    path = root/'.internal/logs/config-storage-events.jsonl'
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('a', encoding='utf-8') as stream:
         stream.write(json.dumps({'time': datetime.now(timezone.utc).isoformat(),
@@ -14,7 +14,7 @@ def storage_event(root, event, **fields):
 
 
 def read_task(root):
-    plan = json.loads((root/'plan.json').read_text(encoding='utf-8-sig'))
+    plan = json.loads((root/'common/plan.json').read_text(encoding='utf-8-sig'))
     spec = plan['job_spec']
     if spec['schema_version'] != '3.0' or digest(spec) != plan['job_spec_sha256']:
         raise ValueError('Invalid task plan or hash')

@@ -34,13 +34,16 @@ def start_node(root, action="start"):
               '--label','benchmark.spec_sha256='+ownership_digest(s)]+docker_run_args(s['container'])
         for d in s['container']['devices']: args+=['--device',d]
         for m in s['container']['mounts']: args+=['-v',m['source']+':'+m['target']+(':ro' if m['read_only'] else '')]
-        args+=['-w',str(root),image,'sleep','infinity']
+        task_root=Path(s.get('storage',{}).get('root',root))
+        for name in ['tmp','cache']: (task_root/name).mkdir(exist_ok=True)
+        args+=['--log-driver','none','-e','TMPDIR='+str(task_root/'tmp'),
+               '-e','XDG_CACHE_HOME='+str(task_root/'cache'),'-e','PYTHONDONTWRITEBYTECODE=1',
+               '-w',str(root),image,'sleep','infinity']
         cid=command(args,timeout=180).strip()
     if s.get('container_registry'):
         save_pool(s,container_id=cid,image_id=image,active_run_dir=str(root),removed=False)
     transition(root,'DEPLOYING',container_id=cid,image_id=image)
-    shutil.copy2(Path(__file__).with_name('service_process.py'),root/'scripts/service_process.py')
-    command(['docker','exec',cid,'python3',str(root/'scripts/service_process.py'),action,str(root)])
+    command(['docker','exec',cid,'python3',str(Path(__file__).with_name('service_process.py')),action,str(root)])
     return {'status':'PASSED','message':'Node processes started','artifacts':[]}
 
 

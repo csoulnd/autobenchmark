@@ -30,7 +30,7 @@ def execute(request):
             return start_node(root,action='start_models')
         if action == 'start_proxy':
             from stage_runtime import command
-            command(['docker','exec',state(root)['container_id'],'python3',str(root/'scripts/service_process.py'),'start_proxy',str(root)])
+            command(['docker','exec',state(root)['container_id'],'python3',str(Path(__file__).with_name('service_process.py')),'start_proxy',str(root)])
             return {'status':'PASSED'}
         if action == 'identity':
             if not request.get('include_proxy',True) and not spec['deployment']['service']['model_health_urls']:
@@ -75,7 +75,7 @@ def execute(request):
             case=data.get('cases',{}).get(request['case_id'],{})
             if case.get('status')=='RUNNING' or any(not a.get('cleanup',{}).get('released') for a in case.get('attempts',[])):
                 return {'status':'PASSED','service':'UNKNOWN','reason':'Client cleanup unverified'}
-            probe=json.loads(command(['docker','exec',container['Id'],'python3',str(root/'scripts/service_process.py'),'probe',str(root)]))
+            probe=json.loads(command(['docker','exec',container['Id'],'python3',str(Path(__file__).with_name('service_process.py')),'probe',str(root)]))
             if not probe['alive']:
                 transition(root,'UNKNOWN',smoke_identity=None)
                 return {'status':'PASSED','service':'DEAD'}
@@ -99,7 +99,7 @@ if __name__ == '__main__':
     try:
         result = execute(request)
     except Exception as exc:
-        result = {'status': 'FAILED', 'error': repr(exc)}
+        result = {'status': 'FAILED', 'error': repr(exc), 'error_type': type(exc).__name__}
     try:
         root=Path(request['run_dir'])
         spec=read_plan(root)

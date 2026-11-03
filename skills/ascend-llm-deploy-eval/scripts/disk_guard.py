@@ -22,6 +22,8 @@ def check(root, count=1, case_dir=None, admission=False):
     result = dict(used_bytes=used, limit_bytes=limit, free_bytes=free,
                   reserve_bytes=RESERVE_BYTES, subtask_bytes=case_used,
                   subtask_limit_bytes=SUBTASK_BYTES)
+    from stage_runtime import save
+    save(root/'storage-state.json', result)
     required = RESERVE_BYTES + max(0, limit-used) if admission else RESERVE_BYTES
     if used >= limit or case_used >= SUBTASK_BYTES or free < required:
         raise DiskLimitError('Storage budget exceeded: '+str(result))

@@ -128,7 +128,7 @@ def service_identity(spec,root):
     c=inspect_owned(spec,data.get('container_id'))
     if not c['State']['Running'] or c['Image']!=data.get('image_id'):
         raise ValueError('Registered container is not running or image changed')
-    raw=command(['docker','exec',c['Id'],'python3',str(root/'scripts/service_process.py'),'identity',str(root)])
+    raw=command(['docker','exec',c['Id'],'python3',str(Path(__file__).with_name('service_process.py')),'identity',str(root)])
     return {'container_id':c['Id'],'container_started_at':c['State']['StartedAt'],'processes':json.loads(raw)}
 
 

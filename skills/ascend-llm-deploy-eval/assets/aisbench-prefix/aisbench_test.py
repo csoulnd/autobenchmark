@@ -48,6 +48,10 @@ def symlink_force(target, link_name):
             os.symlink(target, link_name)
         else:
             raise e
+    if os.environ.get('BENCH_LINK_MANIFEST'):
+        from tool_links import record
+        record(link_name)
+
 
 def create_gsm8k_dataset(dataset_type, input_len, data_num, model_path, dataset_path, prefix_num, repeat_rate, seed,
                          length_mean=None, length_std=None, length_min=None, length_max=None):
@@ -91,7 +95,7 @@ def generate_aisbench_command(DEFAULT_PERFORMANCE_TEST):
     if test_accuracy:
         ais_bench_cmd = f"ais_bench --models vllm_api_chat_temp --datasets gsm8k_gen_0_shot_cot_str_perf --work-dir {OUTPUT_DIR} --dump-eval-details"
     else:
-        ais_bench_cmd = f"ais_bench --models vllm_api_chat_temp --datasets gsm8k_gen_0_shot_cot_str_perf --mode perf --summarizer {DEFAULT_PERFORMANCE_TEST} --work-dir {OUTPUT_DIR} --debug --num-warmups 0 2>&1 | tee -a aisbench.log | tee -a aisbench_all.log"
+        ais_bench_cmd = f"ais_bench --models vllm_api_chat_temp --datasets gsm8k_gen_0_shot_cot_str_perf --mode perf --summarizer {DEFAULT_PERFORMANCE_TEST} --work-dir {OUTPUT_DIR} --debug --num-warmups 0 >> aisbench.log 2>&1"
     return ais_bench_cmd
 
 def generate_test_dataset(src_file, dst_dir):
@@ -106,13 +110,12 @@ def save_result(request_rate, npu_num, repeat_rate):
     aisbench_log_dir = "aisbench.log"
     filename = "aisbench_result.csv"
     ans, log_dir=get_data(aisbench_log_dir,request_rate,npu_num,repeat_rate)
-    save_log(aisbench_log_dir, log_dir)
     save_csv(ans, filename)
 
 def modify_aisbench_api(concurrency, output_len, request_rate_param=None):
     if request_rate_param is None:
         request_rate_param = request_rate
-    file_default = open("default_api.py", 'r+')
+    file_default = open(os.path.join(os.environ.get("BENCH_TOOL_SOURCE", os.path.dirname(__file__)), "default_api.py"), "r")
     file_temp = open("temp_api.py", 'w+')
     logging.info("Api config file:")
     for ss in file_default.readlines():
@@ -271,8 +274,6 @@ def cal_prefix_hit_info(query_tokens, query_tokens_external, hit_tokens, hit_tok
     try:
         with open("aisbench.log", "a", encoding="utf-8") as log_file:
             log_file.write("\n" + "\n".join(log_lines) + "\n")
-        with open("aisbench_all.log", "a", encoding="utf-8") as all_log_file:
-            all_log_file.write("\n" + "\n".join(log_lines) + "\n")
     except OSError as error:
         logging.error(f"Failed to write prefix cache information to log files: {error}")
 
@@ -297,10 +298,6 @@ def setup_logging():
     logger.addHandler(file_handler)
 
     # 写入 aisbench_all.log（所有运行累积日志）
-    all_file_handler = logging.FileHandler("aisbench_all.log", mode="a", encoding="utf-8")
-    all_file_handler.setFormatter(formatter)
-    logger.addHandler(all_file_handler)
-
 if __name__ == '__main__':
     args = parse_arguments()
     input_len = args.input_len
@@ -328,15 +325,8 @@ if __name__ == '__main__':
     # 初始化日志文件：清空 aisbench.log（新运行覆盖），aisbench_all.log 添加分隔符（续写）
     with open("aisbench.log", "w", encoding="utf-8") as f:
         f.write("")
-    with open("aisbench_all.log", "a", encoding="utf-8") as f:
-        f.write(f"\n\n{'='*50}\n")
-        f.write(f"New run started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"{'='*50}\n\n")
-
-    # 配置日志输出到控制台 + aisbench.log + aisbench_all.log
     setup_logging()
     logging.info("aisbench.log has been cleared for this run.")
-    logging.info("aisbench_all.log separator added for this run.")
 
     # 变长参数校验
     if (length_mean is None) ^ (length_std is None):

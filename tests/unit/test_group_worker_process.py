@@ -20,7 +20,8 @@ class WorkerProcessTests(unittest.TestCase):
             spec={'schema_version':'3.0','job_id':'20260101-997','cleanup':{'task_end':'stop_container'},
                   'deployments':[{'id':'dep'}],'sub_tasks':[{'id':'s1'}]}
             sha=digest(spec)
-            (root/'plan.json').write_text(json.dumps({'job_spec':spec,'job_spec_sha256':sha,'sequence':spec['sub_tasks']}))
+            (root/'common').mkdir()
+            (root/'common/plan.json').write_text(json.dumps({'job_spec':spec,'job_spec_sha256':sha,'sequence':spec['sub_tasks']}))
             (root/'resolved-cluster.json').write_text(json.dumps({'plan_sha256':sha,'deployments':{'dep':{'groups':{'node':{
                 'host':'node.example','run_dir':str(root),'script':str(root/'node_rpc.py')}}}}}))
             child='''import json,time

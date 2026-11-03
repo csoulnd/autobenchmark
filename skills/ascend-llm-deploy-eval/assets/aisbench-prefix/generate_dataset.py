@@ -25,7 +25,7 @@ def create_dataset(tokenizer_path: str, input_len: int, number: int, prefix_flag
     while len(output_samples) < number and attempts < max_attempts:
         attempts += 1
         # 随机选择一条文本
-        picker = DataPicker("./GSM8K.jsonl", "./picked_ids.txt", prefix_flag)
+        picker = DataPicker(os.path.join(os.path.dirname(__file__), "GSM8K.jsonl"), "./picked_ids.txt", prefix_flag)
         raw_text = picker.pick_one()
         if raw_text is None:
             break
