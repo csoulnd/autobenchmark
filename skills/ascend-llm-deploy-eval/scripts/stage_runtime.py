@@ -168,8 +168,11 @@ def entry(stage):
     p=argparse.ArgumentParser(); p.add_argument('--run-dir',type=Path,required=True)
     p.add_argument('--bindings',type=Path)
     args=p.parse_args()
-    if not args.run_dir.is_absolute() or not (args.run_dir/'plan.json').is_file():
-        print(json.dumps({'stage':stage,'status':'BLOCKED','message':'Absolute run-dir and plan required','artifacts':[]}))
+    plan_path = args.run_dir/'common/plan.json'
+    error = ('Absolute run-dir required: '+str(args.run_dir) if not args.run_dir.is_absolute()
+             else 'Task plan missing: '+str(plan_path) if not plan_path.is_file() else None)
+    if error:
+        print(json.dumps({'stage':stage,'status':'BLOCKED','message':error,'artifacts':[]}))
         return 2
     def run():
         from task_runtime import stage_entry
