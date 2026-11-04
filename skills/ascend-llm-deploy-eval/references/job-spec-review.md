@@ -49,3 +49,15 @@ plan.json 固定需求和 sub_task 顺序；resolved-cluster.json 保存拓扑�
 规范化阶段移除参考命令中的ASCEND_SLOG_PRINT_TO_STDOUT与ASCEND_GLOBAL_LOG_LEVEL赋值；计划校验拒绝在launch.env/bootstrap中显式设置，避免启动细粒度算子日志。环境加载脚本仍需审阅，不保证外部脚本没有间接设置。
 
 节点preflight-report.json记录检查时间、分组结果、失败原因及未执行项目；实际资源值查preflight-evidence.json、discovery.json。检查分组覆盖磁盘、镜像、挂载、设备、权重、tokenizer、工具、网络、资源占用或服务复用。权重检查为索引分片存在性，不是全文件内容校验。独立检查项全部执行并汇总异常，依赖缺失项目标为阻塞，不能计为通过。现有总体提交条件保持：冻结计划与节点登记一致、预检成功、任务未重复执行；终端只输出总体结论与失败原因。
+
+### 稳态与单前缀
+
+case.steady_state 为布尔值，默认 false；true 使用 AISBench stable_stage summarizer，目标环境需提供该配置。这是统计模式，不代表已检测服务稳定，不替代预热。
+
+单前缀已有 prefix_num=1（默认）；prefix_ratio 指定公共前缀比例。DP 预热重复发送每个前缀，不增加不同前缀数量。服务端 enable-prefix-caching 在部署参数中配置。
+
+### AISBench 稳态口径与填充边界
+steady_state=true 仅对正式负载选择 stable_stage；缓存填充使用 default_perf，避免少量填充请求无法形成稳态而失败。单共享前缀使用 prefix_num=1；DP 重复填充不增加前缀种类，实际覆盖仍须检查各 engine 的指标增量，不能仅凭发送 DP 条请求推定成功。
+2026-11-04 检查的目标镜像 AISBench 支持信号量限制并发、完成后继续处理待发请求；另有 pressure_mode/pressure_time，但当前适配器未暴露后者。默认有限请求数结束后会排空，不声称无限稳态负载。stable_stage 从请求起止事件识别区间，阈值为 int(并发*0.98)，允许 1 ms 内恢复，忽略第一次达到最大并发的请求；找不到区间报错。没有固定最小测量时长。其选中请求统计与区间分母并非逐 token 时间窗口裁剪；报告保留工具原始口径、区间时长及并发曲线。
+缓存工具通过 /metrics 采集 normal/external prefix_cache_queries_total 和 hits_total 的前后增量，按 engine 分组；这是 token 计数比例，不能替换成请求命中比例。block 对齐、最后 token 重算及 tokenizer/chat template 可能造成目标100%与实测值不同，应保留实际证据。
+纯P/纯D命名按用户明确定义记录；当用户定义输出1为纯P、100%前缀目标为纯D时，仍可使用现有代理入口，不额外要求阶段隔离。但不得声称指标剔除了代理、预填充或KV传输耗时。

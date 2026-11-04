@@ -35,7 +35,7 @@ def normalize(spec):
         s.setdefault('cleanup',{'after_case':'keep_service','task_end':'stop_container'})
         for case in s.get('cases',[]):
             for k,v in {'formal_requests':case['concurrency']*4,'prefix_num':1,'seed':1,
-                        'request_rate':0,'warmup':True,'reset_cache':True,'timeout_seconds':5400}.items():
+                        'steady_state':False,'request_rate':0,'warmup':True,'reset_cache':True,'timeout_seconds':5400}.items():
                 case.setdefault(k,v)
     for subtask in s.get('sub_tasks', []):
         subtask.setdefault('after_case', s['cleanup']['after_case'])

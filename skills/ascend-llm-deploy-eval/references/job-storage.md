@@ -40,3 +40,19 @@ sub_tasks/<sub_task_id>/attempt-01/
 新任务上传的代码快照、原始公共输入、冻结计划及上传清单统一保存在 common/。模型进程管理、case runner、PD proxy 直接执行公共快照；测试工具公共模块通过模块路径复用，不为每个 attempt 创建模块和 GSM8K 软链接。每个 attempt 只保留需要修改的包装脚本与配置，以及工具原始结果。
 
 cases/<case_id>/case.json 保存负载定义；deployments/ 保存连续服务日志；sub_tasks/ 保存各次测试结果。节点运行目录及协调服务状态放在 .internal/；内部提交日志放在 .internal/logs/。根目录保留运行入口与汇总状态，便于查询。旧冻结任务继续使用自身快照，不自动迁移历史绝对路径。
+
+### 显式共享挂载与有人值守验证
+默认每个host为独立存储；相同绝对路径不是共享声明。bindings可添加：
+```json
+{"shared_storage_groups":[{"id":"weights-share","nodes":["node_p","node_d"]}]}
+```
+节点名称引用bindings.nodes；每组至少两个节点、节点不能重复参与组。协调端若需复用，必须与某个声明节点具有完全一致的host/work_dir。组内允许不同绝对work_dir；它们必须映射同一共享目录。探针使用同一相对文件名，各节点从自身work_dir读写，不能混用其他节点的绝对路径。
+prepare冻结本地任务后、任何远端公共包上传前验证声明：各节点轮流在work_dir写独占随机临时探针，所有成员读取核对内容；每轮清理探针，失败阻塞、不静默回退。work_dir须已存在且可写。证据保存本地job目录shared-storage-verification.json，供有人值守审阅。验证通过仅允许上传去重，仍须完成其余预检和有人值守提交决策；prepare不启动服务。
+上传回执只核验已声明且验证通过的组在本次上传后的可见性，不能替代共享声明；回执不可见阻塞。未声明的物理共享目录会在第二次独占创建时失败，不自动启用共享。
+逻辑父job_id保持不变。节点身份为<job_id>-node-<node_id>，node_id限制1–32个ASCII字母、数字、下划线或连字符且以字母数字起始。节点物理目录为<work_dir>/<job_id>/nodes/<node_job_id>，包含部署日志、sub_tasks、磁盘统计、临时缓存和.internal运行状态；容器身份带node_job_id。common/node-map.json关联父任务、节点身份、本机绝对路径、归档相对路径及公共包。公共包只保留父任务common/skill-snapshot一份，各节点使用自身挂载路径访问。父任务根仍为容器挂载范围，容器登记保留主机隔离。重试与端口generation均留在对应节点目录内。保持失败证据，不覆盖未知任务目录。
+
+
+### 代码、现场绑定和运行配置边界
+本地仓库维护固定工具源码；同步安装前备份并核验摘要，冻结后通过公共common/skill-snapshot直接执行。prepare_benchmark_tool仅创建输出目录及源码摘要清单，不复制或字符串改写aisbench_test.py。
+每attempt的tool-config.json是执行器传入工具的解析配置，包含case负载、现场service参数、DP和设备数。runtime_config读取它并映射已有CLI字段；该模式优先于CLI默认值。独立工具不设置BENCH_CASE_CONFIG时继续使用config.py及CLI。正式统计由case.steady_state选择，前缀填充固定default_perf。AISBench要求的temp_api.py仅是模型配置薄模板，保留阶段并发/输出长度转换，不是工具源码副本。
+事件、pipefail/失败传播、日志规范化、metrics快照直接维护在公共aisbench_test.py；事件通过BENCH_EVENT_ROOT启用，链接登记通过BENCH_LINK_MANIFEST启用。输出及快照落在attempt工作目录。现场start-*.sh仍在IP/端口/路径绑定后生成并记录摘要，不能与固定工具代码混淆。

@@ -41,9 +41,11 @@ def run(root,folder):
     endpoint=urlsplit(service['endpoint'])
     config={'DATASET_PATH':str(datasets),'WORK_PATH':str(work),'MODEL_NAME':spec['model']['served_name'],
         'MODEL_PATH':spec['model']['path'],'HOST_IP':endpoint.hostname,'HOST_PORT':str(endpoint.port),
-        'URL':'','API_KEY':'','DEFAULT_PERFORMANCE_TEST':'default_perf','OUTPUT_DIR':'./outputs',
+        'URL':'','API_KEY':'','DEFAULT_PERFORMANCE_TEST':'stable_stage' if case.get('steady_state', False) else 'default_perf','OUTPUT_DIR':'./outputs',
         'POD_INFO':[service['prefill_url'].split('://',1)[-1] if 'prefill_url' in service else f"127.0.0.1:{service['prefill_port']}"]}
-    (tool/'config.py').write_text(''.join(f'{k} = {v!r}\n' for k,v in config.items()))
+    config.pop('DEFAULT_PERFORMANCE_TEST')
+    config_path=folder/'tool-config.json'
+    config_path.write_text(json.dumps({'case':case,'service':config,'dp':spec['benchmark']['prefill_dp'],'npu_num':len(service['npu_ids'])},indent=2))
     process=None; errors=[]; result=None; failure=None; started=time.monotonic()
     current_stage = 'cache_reset'
     try:
@@ -54,15 +56,11 @@ def run(root,folder):
         for port in reset_targets:
             (folder/f'metrics-{port}-before.txt').write_text(http(port,'/metrics'))
         current_stage = 'testing_detail'
-        argv=['python3','aisbench_test.py','--input_len',str(case['input_tokens']),'--output_len',str(case['output_tokens']),
-            '--data_num',str(case['formal_requests']),'--concurrency',str(case['concurrency']),
-            '--request_rate',str(case['request_rate']),'--test_type','stream','--dataset_type','prefix_cache',
-            '--prefix_num',str(case['prefix_num']),'--repeat_rate',str(case['prefix_ratio']),'--prefix_test',
-            '--seed',str(case['seed']),'--dp',str(spec['benchmark']['prefill_dp']),'--npu_num',str(len(service['npu_ids']))]
+        argv=['python3',str(Path(spec['benchmark']['tool_dir'])/'aisbench_test.py')]
         (folder/'command.json').write_text(json.dumps(argv))
         with (folder/'runner-diagnostics.log').open('w') as log:
             process=subprocess.Popen(argv,cwd=tool,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,
-                env={**os.environ, 'BENCH_LINK_MANIFEST':str(folder/'tool-links.json'), 'BENCH_DATASET_CACHE':str(Path(spec.get('storage', {}).get('root', root))/'dataset-cache'), 'BENCH_EVENT_ROOT':str(root), 'BENCH_EVENT_CONTEXT':json.dumps(context),
+                env={**os.environ, 'BENCH_CASE_CONFIG':str(config_path), 'BENCH_LINK_MANIFEST':str(folder/'tool-links.json'), 'BENCH_DATASET_CACHE':str(Path(spec.get('storage', {}).get('root', root))/'dataset-cache'), 'BENCH_EVENT_ROOT':str(root), 'BENCH_EVENT_CONTEXT':json.dumps(context),
                      'PYTHONPATH':str(Path(__file__).parent)+os.pathsep+os.environ.get('PYTHONPATH','')})
             identity={'pid':process.pid,'start_ticks':ticks(process.pid)}
             (folder/'client.json').write_text(json.dumps(identity))

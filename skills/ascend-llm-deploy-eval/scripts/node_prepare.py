@@ -11,7 +11,7 @@ from task_preflight import discover_network, allocate_ports, inspect_image_tools
 def prepare(request):
     root = Path(request['run_dir'])
     job_id = request['job_id']
-    if not root.is_absolute() or '..' in root.parts or not re.fullmatch(r'\d{8}-\d{3}(?:-\d{3})*', job_id):
+    if not root.is_absolute() or '..' in root.parts or not re.fullmatch(r'\d{8}-\d{3}(?:-node-[A-Za-z0-9][A-Za-z0-9_-]{0,31})?(?:-\d{3})*', job_id):
         raise ValueError('Invalid task root or job ID')
     marker = root/'node-owner.json'
     if marker.exists():

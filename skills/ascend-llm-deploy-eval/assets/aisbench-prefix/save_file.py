@@ -5,7 +5,7 @@ import shutil
 import traceback
 import pandas as pd
 from datetime import datetime
-from config import MODEL_PATH
+from runtime_config import MODEL_PATH
 logging.getLogger().setLevel(logging.INFO)
 
 DEFAULT_METRICS = {

@@ -10,6 +10,7 @@ from stage_runtime import save, digest, http, command
 from remote_node import RemoteNode, PortConflict
 from topology import compile_deployment
 from task_events import emit
+from node_identity import node_job_id, node_root as physical_node_root
 
 
 def prepare_call(binding, request):
@@ -35,12 +36,12 @@ def container_pools(spec, bindings):
     for dep in spec['deployments']:
         for slot in sorted({i['placement']['node'] for i in dep['instances']}):
             binding=bindings['nodes'][slot]
-            key=(binding['host'],digest({'runtime':dep['runtime'],'work_dir':binding['work_dir'],
+            key=(binding['host'],digest({'node_id':slot,'runtime':dep['runtime'],'work_dir':binding['work_dir'],
                 'mounts':binding.get('mounts',[])}))
             if key not in pools:
                 number=host_counts.get(binding['host'],0)+1;host_counts[binding['host']]=number
-                name=spec['job_id'] if number==1 else spec['job_id']+f'-{number:03}'
-                pools[key]={'name':name,'job_id':spec['job_id'],'task_root':str(Path(binding['work_dir'])/spec['job_id']),
+                name=node_job_id(spec['job_id'],slot)+(f'-{number:03}' if number>1 else '')
+                pools[key]={'name':name,'job_id':node_job_id(spec['job_id'],slot),'parent_job_id':spec['job_id'],'node_id':slot,'node_root':str(physical_node_root(binding,spec['job_id'],slot)),'task_root':str(Path(binding['work_dir'])/spec['job_id']),
                     'devices':set(),'model_paths':set(),'plan_sha256':digest(spec)}
             pool=pools[key]
             pool['devices'].update(d for i in dep['instances'] if i['placement']['node']==slot for d in i['placement']['devices'])
@@ -66,12 +67,12 @@ def preflight(root, spec, bindings, *, deployment_id=None, generation=None):
             binding = bindings['nodes'][slot]
             request_ports = {i['id']+'.'+p: width for i in dep['instances'] if i['placement']['node'] == slot
                              for p, width in i['ports'].items()}
-            node_root = str(Path(binding['work_dir'])/spec['job_id']/'.internal'/dep['id'])
+            node_root = str(physical_node_root(binding,spec['job_id'],slot)/'.internal'/dep['id'])
             if generation is not None:
                 node_root = str(Path(node_root)/'port-generations'/generation)
             try:
                 discovered = prepare_call(binding, {'action': 'discover', 'run_dir': node_root,
-                    'job_id': spec['job_id']+f'-{dep_index:03}', 'image': dep['runtime']['image'],
+                    'job_id': node_job_id(spec['job_id'],slot)+f'-{dep_index:03}', 'image': dep['runtime']['image'],
                     'bindings': binding, 'port_requests': request_ports})
                 nodes[slot] = {**discovered, 'root': node_root, 'ports': {i['id']:
                     {name: discovered['port_bases'][i['id']+'.'+name] for name in i['ports']}
@@ -98,9 +99,9 @@ def preflight(root, spec, bindings, *, deployment_id=None, generation=None):
             flat = {'id': dep['id']+'-'+key.replace('/', '-'), 'model': {**dep['model'], 'max_model_len': max_length},
                 'container': dep['runtime']['container'], 'npu_ids': group['npu_ids'],
                 'commands': group['commands'], 'service': service, 'prefill_dp': compiled['prefill_dp']}
-            local_spec = {'job_id': spec['job_id']+f'-{dep_index:03}', 'target': {'host': binding['host']},
+            local_spec = {'job_id': node_job_id(spec['job_id'],group['node'])+f'-{dep_index:03}', 'target': {'host': binding['host']},
                           'execution': spec['execution'], 'cleanup': spec['cleanup'],
-                          'storage': {'root':pools[(dep['id'],group['node'])]['task_root'],
+                          'storage': {'root':pools[(dep['id'],group['node'])]['node_root'],
                            'subtasks':sum(1 for t in spec['sub_tasks'] if any(bindings['nodes'][i['placement']['node']]['host']==binding['host'] for d in spec['deployments'] if d['id']==t['deployment_id'] for i in d['instances']))},
                           'container_pool':pools[(dep['id'],group['node'])]}
             try:

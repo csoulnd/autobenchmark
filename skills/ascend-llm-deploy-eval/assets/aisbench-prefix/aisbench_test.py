@@ -1,3 +1,21 @@
+import json as _event_json, os as _event_os
+_event_stage = None
+def _benchmark_event(stage, status):
+    global _event_stage
+    _event_stage = stage if status == "doing" else None
+    if _event_os.environ.get("BENCH_EVENT_ROOT"):
+        from task_events import emit
+        emit(_event_os.environ["BENCH_EVENT_ROOT"], stage, status, **_event_json.loads(_event_os.environ["BENCH_EVENT_CONTEXT"]))
+def _benchmark_run(*args, **kwargs):
+    try:
+        result = subprocess.run(*args, **kwargs)
+        from log_format import normalize_log
+        normalize_log("aisbench.log")
+        return result
+    except Exception:
+        if _event_stage:
+            _benchmark_event(_event_stage, "fail")
+        raise
 import os, errno
 import sys
 import argparse
@@ -6,7 +24,7 @@ import logging
 import subprocess
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from config import *
+from runtime_config import *
 from generate_dataset import *
 from save_file import get_data, save_csv, save_log
 from cal_prefix_hit_rate import *
@@ -36,7 +54,11 @@ def parse_arguments():
     parser.add_argument("--length_std", type=float, default=None, help="gaussian std for variable length")
     parser.add_argument("--length_min", type=int, default=None, help="min length for uniform range or gaussian clip")
     parser.add_argument("--length_max", type=int, default=None, help="max length for uniform range or gaussian clip")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if os.environ.get('BENCH_CASE_CONFIG'):
+        from runtime_config import case_arguments
+        vars(args).update(case_arguments())
+    return args
 
 def symlink_force(target, link_name):
     logging.info(f"make symlink: {link_name} ==> {target}")
@@ -171,6 +193,9 @@ def get_pod_metrics_info(pod_info):
             query_tokens_external[pod] = q_e
             hit_tokens[pod] = h_n
             hit_tokens_external[pod] = h_e
+    import json, time
+    with open("metrics-snapshots.jsonl", "a") as snapshot:
+        snapshot.write(json.dumps({"time": time.time(), "query": query_tokens, "external_query": query_tokens_external, "hit": hit_tokens, "external_hit": hit_tokens_external}) + "\n")
     return query_tokens, query_tokens_external, hit_tokens, hit_tokens_external
 
 def cal_prefix_hit_info(query_tokens, query_tokens_external, hit_tokens, hit_tokens_external, query_tokens_new,
@@ -187,7 +212,7 @@ def cal_prefix_hit_info(query_tokens, query_tokens_external, hit_tokens, hit_tok
               f"{headers[2]:<{hbm_detail_width}}{headers[3]:<{external_rate_width}}{headers[4]}")
 
     def format_rate(hits, queries):
-        return "0.00%" if queries == 0 else format(hits / queries, ".2%")
+        return "unavailable" if queries <= 0 else format(hits / queries, ".2%")
 
     def build_row(scope, hbm_hits, hbm_queries, external_hits, external_queries):
         return (f"{scope:<{scope_width}}{format_rate(hbm_hits, hbm_queries):<{hbm_rate_width}}"
@@ -419,7 +444,7 @@ if __name__ == '__main__':
                 pod_info = POD_INFO
             logging.info(f"pod_info: {pod_info}")
 
-            logging.info(f"[开始] 前缀数据集测试")
+            logging.info(f"[开始] 前缀数据集测试"); _benchmark_event('warmup', 'doing')
             # 前缀测试: request rate 固定为 0
             warmup_concurrency = prefix_num if dp == 1 else dp
             modify_aisbench_api(str(warmup_concurrency), "1", request_rate_param="0")
@@ -428,8 +453,10 @@ if __name__ == '__main__':
             # 命中率计算
             query_tokens, query_tokens_external, hit_tokens, hit_tokens_external = get_pod_metrics_info(pod_info)
 
-            subprocess.run(ais_bench_cmd, shell=True, check=True)
-            logging.info(f"[完成] 前缀数据集测试完成，结果保存在aisbench_result.csv")
+            # Cache filling has only DP*prefix_num requests, so it cannot
+            # establish a replenished stable interval. Summarize it separately.
+            _benchmark_run(["bash", "-o", "pipefail", "-c", generate_aisbench_command("default_perf")], check=True)
+            logging.info(f"[完成] 前缀数据集测试完成，结果保存在aisbench_result.csv"); _benchmark_event('warmup', 'done')
 
             query_tokens_new, query_tokens_external_new, hit_tokens_new, hit_tokens_external_new = get_pod_metrics_info(pod_info)
             cal_prefix_hit_info(query_tokens, query_tokens_external, hit_tokens, hit_tokens_external,query_tokens_new,
@@ -437,38 +464,38 @@ if __name__ == '__main__':
 
             # 保存前缀测试结果
             save_result(0, npu_num, repeat_rate)
-            logging.info(f"[开始] 全量数据集测试")
+            logging.info(f"[开始] 全量数据集测试"); _benchmark_event('benchmark', 'doing')
             # 命中率计算
             query_tokens, query_tokens_external, hit_tokens, hit_tokens_external = get_pod_metrics_info(pod_info)
 
             modify_aisbench_api(concurrency,str(output_len))
             dst_file = generate_test_dataset(src_file_data, dst_dir)
             # 执行测试命令
-            subprocess.run(ais_bench_cmd, shell=True, check=True)
-            logging.info(f"[完成] 全量数据集测试完成，结果保存在aisbench_result.csv")
+            _benchmark_run(["bash", "-o", "pipefail", "-c", ais_bench_cmd], check=True)
+            logging.info(f"[完成] 全量数据集测试完成，结果保存在aisbench_result.csv"); _benchmark_event('benchmark', 'done')
 
             query_tokens_new, query_tokens_external_new, hit_tokens_new, hit_tokens_external_new = get_pod_metrics_info(pod_info)
             cal_prefix_hit_info(query_tokens, query_tokens_external, hit_tokens, hit_tokens_external, query_tokens_new,
                                 query_tokens_external_new, hit_tokens_new, hit_tokens_external_new)
 
         else:
-            logging.info(f"[开始] 全量数据集测试")
+            logging.info(f"[开始] 全量数据集测试"); _benchmark_event('benchmark', 'doing')
             modify_aisbench_api(concurrency,str(output_len))
             dst_file = generate_test_dataset(src_file_data, dst_dir)
-            subprocess.run(ais_bench_cmd, shell=True, check=True)
-            logging.info(f"[完成] 全量数据集测试完成，结果保存在aisbench_result.csv")
+            _benchmark_run(["bash", "-o", "pipefail", "-c", ais_bench_cmd], check=True)
+            logging.info(f"[完成] 全量数据集测试完成，结果保存在aisbench_result.csv"); _benchmark_event('benchmark', 'done')
 
     else:
-        logging.info(f"[开始] 全量数据集测试")
+        logging.info(f"[开始] 全量数据集测试"); _benchmark_event('benchmark', 'doing')
         modify_aisbench_api(concurrency,str(output_len))
         dst_file = generate_test_dataset(src_file_data, dst_dir)
         if test_times > 1:
             for test_time in range(test_times):
                 logging.info(f"Execution rounds: {test_time + 1}")
-                subprocess.run(ais_bench_cmd, shell=True, check=True)
+                _benchmark_run(["bash", "-o", "pipefail", "-c", ais_bench_cmd], check=True)
         else:
-            subprocess.run(ais_bench_cmd, shell=True, check=True)
-        logging.info(f"[完成] 全量数据集测试完成，结果保存在aisbench_result.csv")
+            _benchmark_run(["bash", "-o", "pipefail", "-c", ais_bench_cmd], check=True)
+        logging.info(f"[完成] 全量数据集测试完成，结果保存在aisbench_result.csv"); _benchmark_event('benchmark', 'done')
 
 
     # 保存结果

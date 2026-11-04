@@ -249,9 +249,12 @@ def create_execution(spec, dep, root, index, bindings, network, port_bases, port
     if 'storage' in spec: execution['storage'] = spec['storage']
     if pool:
         execution['job_id']=pool['job_id']
+        execution['parent_job_id']=pool.get('parent_job_id',pool['job_id'])
+        execution['node_id']=pool.get('node_id')
         execution['target']['container']=pool['name']
         execution['container_fingerprint']=digest({'job_id':pool['job_id'],'plan':pool['plan_sha256'],'image':image,'container':container})
-        execution['container_registry']=str(Path(pool['task_root'])/'container-pools'/(pool['name']+'.json'))
+        host_key = hashlib.sha256(spec['target']['host'].encode()).hexdigest()[:16]
+        execution['container_registry']=str(Path(pool['task_root'])/'container-pools'/host_key/(pool['name']+'.json'))
     save(child/'resolved.json', execution)
     save(child/'plan.json', {'execution_spec': execution, 'execution_sha256': digest(execution)})
     save(child/'scripts/service.json', service)

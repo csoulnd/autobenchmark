@@ -206,14 +206,18 @@
       "input_tokens": 65536,
       "output_tokens": 1024,
       "concurrency": 16,
-      "prefix_ratio": 0.5
+      "prefix_ratio": 0.5,
+      "prefix_num": 1,
+      "steady_state": false
     },
     {
       "id": "64k-c32-p50",
       "input_tokens": 65536,
       "output_tokens": 1024,
       "concurrency": 32,
-      "prefix_ratio": 0.5
+      "prefix_ratio": 0.5,
+      "prefix_num": 1,
+      "steady_state": false
     }
   ],
   "unresolved": [

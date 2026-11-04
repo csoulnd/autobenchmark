@@ -8,6 +8,15 @@ import submit_job
 from stage_runtime import PACKAGE
 
 class JobBundleTests(unittest.TestCase):
+    def test_shared_destination_uploaded_once(self):
+        with patch.object(submit_job, 'upload') as upload, patch.object(submit_job, 'ssh', side_effect=['', 'True', '']):
+            submit_job.upload_destinations([('a','/work/job'),('b','/work/job')],Path('bundle'),[[('a','/work/job'),('b','/work/job')]])
+            self.assertEqual(upload.call_count,1)
+
+    def test_same_path_on_distinct_storage_uploaded_twice(self):
+        with patch.object(submit_job, 'upload') as upload, patch.object(submit_job, 'ssh', return_value=''):
+            submit_job.upload_destinations([('a','/work/job'),('b','/work/job')],Path('bundle'))
+            self.assertEqual(upload.call_count,2)
     def test_single_host_bundle_and_collision(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp=Path(tmp)
@@ -34,7 +43,8 @@ class JobBundleTests(unittest.TestCase):
             prepare(PACKAGE/'assets/aisbench-prefix', tool)
             self.assertFalse(any(p.is_symlink() for p in tool.iterdir()))
             self.assertFalse((tool/'GSM8K.jsonl').exists())
-            compile((tool/'aisbench_test.py').read_text(encoding='utf-8'), str(tool/'aisbench_test.py'), 'exec')
+            self.assertFalse((tool/'aisbench_test.py').exists())
+            compile((PACKAGE/'assets/aisbench-prefix/aisbench_test.py').read_text(encoding='utf-8'), 'shared-tool', 'exec')
             self.assertIn('common/skill-snapshot/scripts/tool_links.py',names)
             self.assertFalse(any('/references/' in x or '/test_' in x for x in names))
             self.assertEqual(len([x for x in names if x.endswith('GSM8K.jsonl')]),1)

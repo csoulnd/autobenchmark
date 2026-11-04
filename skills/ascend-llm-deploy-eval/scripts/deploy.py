@@ -35,7 +35,9 @@ def start_node(root, action="start"):
         for d in s['container']['devices']: args+=['--device',d]
         for m in s['container']['mounts']: args+=['-v',m['source']+':'+m['target']+(':ro' if m['read_only'] else '')]
         task_root=Path(s.get('storage',{}).get('root',root))
-        for name in ['tmp','cache']: (task_root/name).mkdir(exist_ok=True)
+        import hashlib
+        task_root = task_root/'.internal'/'container-runtime'/hashlib.sha256(s['target']['host'].encode()).hexdigest()[:16]/s['target']['container']
+        for name in ['tmp','cache']: (task_root/name).mkdir(parents=True,exist_ok=True)
         args+=['--log-driver','none','-e','TMPDIR='+str(task_root/'tmp'),
                '-e','XDG_CACHE_HOME='+str(task_root/'cache'),'-e','PYTHONDONTWRITEBYTECODE=1',
                '-w',str(root),image,'sleep','infinity']

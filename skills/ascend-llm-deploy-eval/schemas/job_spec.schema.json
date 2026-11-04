@@ -369,6 +369,10 @@
           },
           "reset_cache": {
             "type": "boolean"
+          },
+          "steady_state": {
+            "type": "boolean",
+            "default": false
           }
         }
       }
