@@ -34,7 +34,7 @@ bindings.nodes 按逻辑 node 记录 host、work_dir、package、model_paths、p
 
 容器按 [默认容器基线](container-baseline.md) 补齐参数和挂载；bindings.mounts 是按目标路径覆盖/追加的现场配置，省略不代表无挂载。runtime.container 的显式参数覆盖默认值，完整结果写入 resolved 并参与容器复用指纹。源路径不存在时阻塞，不能让 Docker 自动创建空目录代替通信配置文件。
 
-Agent 先将相同版本 Skill 包上传到各节点 package 路径，协调端需要能免密 SSH 到全部节点（包含自身作为节点的情形）。preflight 通过固定节点脚本和 JSON 请求发现环境并生成脚本，不远程执行输入中的 Python 代码。各节点权重、镜像解析、设备、端口与工具均分别检查。
+Agent 通过 prepare 上传冻结包：独立存储分别上传，显式声明且验证通过的共享组仅上传一份，各节点 package 使用自身挂载路径访问；共享验证在上传前完成，证据供有人值守审阅，详见[Job存储](job-storage.md)，协调端需要能免密 SSH 到全部节点（包含自身作为节点的情形）。preflight 通过固定节点脚本和 JSON 请求发现环境并生成脚本，不远程执行输入中的 Python 代码。各节点权重、镜像解析、设备、端口与工具均分别检查。
 
 默认不填写 network_interface：从 UP 且有 IPv4 的接口按当前协商速率选唯一最高者，保留 VLAN，排除 bridge/veth 等虚拟接口。通过 ip JSON 与 sysfs/ethtool 获取信息，不按 data0 名称选择。速率未知、并列或多地址需有人核验；网卡速率不代表跨机可达性。ip 命令损坏时尝试系统路径，不修改服务器 PATH 或网络。端口从系统临时客户端端口区间之外动态选择，启动前再检查；这不是永久端口租约。
 

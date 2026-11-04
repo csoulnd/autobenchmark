@@ -2,22 +2,22 @@
 
 本机使用 submit_job.py prepare 校验 JSON、在 --local-jobs-dir 原子分配编号并冻结任务，再生成 job_id.tar.gz。统一使用同一本地 jobs 目录；远端编号冲突时拒绝覆盖，保留证据，重新分配新任务。任务包以文件清单和 SHA256 校验完整性。协调端与节点的 host/work_dir 相同时只上传一次；主机别名应在 bindings 中统一，脚本不推断不同别名是否属于同一机器。
 
-每台服务器只有 work_dir/job_id 一个任务目录：
+父任务目录为 work_dir/job_id；公共内容位于父目录，节点可变产物位于 nodes/<node_job_id>/：
 
 - common/inputs/：原始需求与现场 bindings；common/plan.json、common/job_spec.json：规范化冻结计划。
 - common/skill-snapshot/：唯一运行包，含执行代码、Schema、测试原始数据和代理。同一节点内直接复用，节点部署不再复制包。排除测试代码、MD指引、示例及字节码。
-- .internal/：现场绑定、生成脚本、服务身份和协调器诊断；deployments/ 保存服务日志，cases/ 保存负载定义，sub_tasks/ 保存测试结果。公共模块直接从 common 导入，仅会改写的适配脚本与配置保留独立文件。
+- .internal/：现场绑定、生成脚本、服务身份和协调器诊断；deployments/ 保存服务日志，cases/ 保存负载定义，sub_tasks/ 保存测试结果。公共工具源码直接从 common 执行，不为 attempt 改写源码。此处节点运行状态、服务日志及测试结果位于 nodes/<node_job_id>/ 下，父目录保留协调状态与冻结负载。
 - dataset-cache/：按参数及内容摘要复用的生成数据。
 - tmp/、cache/：容器通用临时文件和缓存。
 - 状态、summary.json、release-results.json、storage-state.json：执行及占用证据。
 
 上传时先独占创建 job 目录，压缩包也落在目录内。压缩包和解压文件校验成功后删除远端压缩包；失败保留目录，不自动覆盖或重试未知任务。现场预检在该目录执行，prepare 不启动测试。全部归档均由单个 job 目录覆盖，没有 inputs-*、packages-* 旁路暂存目录。
 
-disk_guard 按整个 job 目录统计常规文件的逻辑字节数，不跟随软链接；storage-state.json 保存统计及限额。每节点分别监控，按现有 admission/attempt/客户端运行中周期检查执行。此值不是文件系统块占用，也不包含共享镜像、权重、驱动日志和 Docker 元数据。容器关闭 Docker 日志驱动，服务日志仍写入任务目录；TMPDIR/XDG_CACHE_HOME 指向任务目录，但第三方程序硬编码的外部输出不保证纳入统计。容器可写层随任务容器释放，不声称目录大小等于主机全部增量。
+节点执行的 disk_guard 按节点 storage.root 统计常规文件的逻辑字节数，不跟随软链接；storage-state.json 保存统计及限额。每节点分别监控，按现有 admission/attempt/客户端运行中周期检查执行。此值不是文件系统块占用，也不包含共享镜像、权重、驱动日志和 Docker 元数据。容器关闭 Docker 日志驱动，服务日志仍写入任务目录；TMPDIR/XDG_CACHE_HOME 指向任务目录，但第三方程序硬编码的外部输出不保证纳入统计。容器可写层随任务容器释放，不声称目录大小等于主机全部增量。
 
 ## 主要产物：deployment 与 sub_task
 
-新任务主要产物结构：
+以下为 nodes/<node_job_id>/ 下的主要产物结构；父任务保留协调汇总及 common/node-map.json 节点映射：
 
 ```text
 deployments/<服务配置摘要前16位>-<运行编号>/
@@ -37,9 +37,9 @@ sub_tasks/<sub_task_id>/attempt-01/
 
 ## 公共内容与结果入口
 
-新任务上传的代码快照、原始公共输入、冻结计划及上传清单统一保存在 common/。模型进程管理、case runner、PD proxy 直接执行公共快照；测试工具公共模块通过模块路径复用，不为每个 attempt 创建模块和 GSM8K 软链接。每个 attempt 只保留需要修改的包装脚本与配置，以及工具原始结果。
+新任务上传的代码快照、原始公共输入、冻结计划及上传清单统一保存在 common/。模型进程管理、case runner、PD proxy 直接执行公共快照；测试工具公共模块通过模块路径复用，不为每个 attempt 创建模块和 GSM8K 软链接。每个 attempt 保留 tool-config.json、AISBench 模型配置薄模板和工具原始结果，不生成工具源码副本或包装脚本。
 
-cases/<case_id>/case.json 保存负载定义；deployments/ 保存连续服务日志；sub_tasks/ 保存各次测试结果。节点运行目录及协调服务状态放在 .internal/；内部提交日志放在 .internal/logs/。根目录保留运行入口与汇总状态，便于查询。旧冻结任务继续使用自身快照，不自动迁移历史绝对路径。
+cases/<case_id>/case.json 保存负载定义；deployments/ 保存连续服务日志；sub_tasks/ 保存各次测试结果。节点运行状态放在 nodes/<node_job_id>/.internal/；父任务协调状态及提交日志放在父目录 .internal/。上文 deployments/、sub_tasks/ 为节点目录下的相对路径，cases/ 为父目录下的冻结负载。根目录保留运行入口与汇总状态，便于查询。旧冻结任务继续使用自身快照，不自动迁移历史绝对路径。
 
 ### 显式共享挂载与有人值守验证
 默认每个host为独立存储；相同绝对路径不是共享声明。bindings可添加：
