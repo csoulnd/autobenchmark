@@ -1,9 +1,11 @@
 ---
 name: ascend-llm-deploy-eval
-description: 以 job_spec 引导昇腾模型部署与性能测试，将自然语言需求规范化并完成现场预检，再执行部署、冒烟、测试和分级收尾。支持多模型及跨服务器整组任务，每个执行器内部串行；不包含精度、多P/D拓扑或复杂自动恢复。
+description: 以 job_spec 引导昇腾模型部署与性能测试，将自然语言需求规范化并完成现场预检，再执行部署、冒烟、测试和分级收尾。支持多模型及跨服务器整组任务，每个执行器内部串行；多P/D需验证代理和连接兼容性，不包含精度或复杂自动恢复。
 ---
 
 ## 工作流程
+
+新简洁目录入口使用 [统一 CLI](docs/compact-cli.md)：`scripts/run.py --mode FULL|scripts`。仅采用参考保真模式；FULL 由单协调主进程执行，scripts 停在脚本生成供手动执行。case.mode 区分 perf 与预留 accuracy，后者当前不得执行。新入口的现场绑定须完整；不支持的策略明确阻塞。下文旧入口约定继续适用于历史冻结任务和尚未迁移的调用方，不代表简洁入口仍复制多层快照。
 
 用户描述服务器、部署和测试需求，Agent负责整理为job_spec v3，不要求用户理解Schema或先拆分case。只询问实际缺项；具体歧义或能力缺口在承诺执行前说明。用户指定值优先，不擅自降低负载或改变部署参数。预检、清理及实际提交后的监控按本Skill执行，无需用户重复授权。
 
@@ -43,7 +45,7 @@ python3 /work/JOB_ID/common/skill-snapshot/scripts/finalize.py --run-dir /work/J
 
 显式编号任务的兼容冻结命令为 `python3 scripts/plan_run.py --job-spec /input/job_spec.json --run-dir /work/JOB_ID`，不与自动分配命令重复执行。
 
-plan_run冻结需求、默认值、顺序及代码快照；draft或未决目标不能执行。preflight完成绑定并生成resolved及启动脚本，绑定完成前run.sh拒绝启动。新默认不修改已冻结快照。后台提交方式见任务监控；整组提交见整组执行，不提前启动其子任务。
+plan_run冻结需求、默认值、顺序及代码快照；draft或未决目标不能执行。preflight完成绑定并生成resolved及启动脚本，绑定完成前run.sh拒绝启动。新默认不修改已冻结快照。正式提交前输出整体进展、服务日志、测试日志三类可复制命令；默认应用监控每30分钟。后台提交方式见任务监控；整组提交见整组执行，不提前启动其子任务。
 
 ## 必须保持的约束
 
@@ -54,11 +56,11 @@ plan_run冻结需求、默认值、顺序及代码快照；draft或未决目标�
 
 ## 当前能力与产物
 
-支持vllm serve混部、一个P/一个D/一个proxy的单机或双机PD；job_spec内sub_tasks串行，跨任务整组编排按服务器资源隔离。不支持精度、多P/D、phase并行屏障、复杂中断恢复或旧recipe。
+支持vllm serve混部及单代理PD配置；多P/D要求路由覆盖全部实例、KV覆盖所有P/D组合，同一实例关联连接的并行元数据与connector一致。设备数量校验包含DP×TP×PCP。3P1D/PCP4已具备本地配置回归，实际模型与代理兼容性仍须现场验证，不据此宣称部署通过。job_spec内sub_tasks串行；不支持精度、phase并行屏障、复杂中断恢复或旧recipe。
 
-性能适配器及必要数据在assets/aisbench-prefix，PD代理及许可证在assets/pd-proxy。配置存储仅有事件埋点，无配置库、版本检索或自动选配；事件定义见生命周期。
+性能测试直接调用容器内已安装的 ais_bench --mode perf，不依赖额外插件。默认引用用户外部数据集；用户明确授权GSM8K派生输入时，按[数据生成](docs/generated-data.md)固定上游版本、保留源文件、验证token与前缀，并通过generation_manifest绑定，不将数据打包进技能。默认原生预热1次、缓存清理关闭；不得擅自增加前缀预热或承诺命中率。启用默认日志落盘（不加 --debug）。PD部署仍需现场代理路径。详见[标准CLI适配](docs/native-cli.md)。配置存储仅有事件埋点，无配置库、版本检索或自动选配。
 
-保留计划、现场绑定、代码与启动脚本快照、阶段/状态日志、原始结果及释放记录。本地产物使用D:/autobenchmark-local/，真实连接信息与任务产物均在仓库外；仓库示例只用占位资源，docs只放设计与工程计划。自动流程的归档要求不强加给手动操作。
+保留计划、现场绑定、代码与启动脚本快照、阶段/状态日志、原始结果及释放记录。本地产物使用用户指定的仓库外目录，真实连接信息与任务产物均在仓库外；仓库示例只用占位资源，docs存放使用、开发与设计文档。自动流程的归档要求不强加给手动操作。
 
 
 ## 固定提交与运行约定
@@ -74,4 +76,4 @@ Agent 负责 job_spec/bindings 语义审阅，代码负责 Schema 和业务约�
 
 ## 测试产物读取与归档
 
-新任务按[Job存储](references/job-storage.md)中的deployment/sub_task组织主要产物。优先查看sub_task的tool/aisbench.log打屏结果及工具原始输出；异常时根据部署运行编号和时间区间查看连续服务日志。辅助脚本与内部状态不是长期归档主体，但释放核验前保留。新任务使用父目录 common、cases 及节点目录 nodes/<node_job_id>/ 下的 deployments、sub_tasks，不创建旧结果路径的兼容链接。历史冻结任务保留自身路径。
+新任务按[Job存储](references/job-storage.md)中的deployment/sub_task组织主要产物。优先查看sub_task的tool/aisbench.log打屏结果及工具原始输出；异常时根据部署运行编号和时间区间查看连续服务日志。辅助脚本与内部状态不是长期归档主体，但释放核验前保留。新任务使用父目录 common、cases 及节点目录 nodes/<node_id>/ 下的 deployments、sub_tasks，不创建旧结果路径的兼容链接。历史冻结任务保留自身路径。

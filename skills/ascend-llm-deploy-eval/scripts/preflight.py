@@ -25,12 +25,39 @@ def probe_port(port, timeout=60):
 from stage_runtime import command, entry, read_plan, ready, save, state
 
 
+CONTAINER_TMP = '/bench-tmp'
+
+
+def check_ipc_path(directory=CONTAINER_TMP):
+    length = len((directory.rstrip('/') + '/' + '0'*36).encode('utf-8'))
+    if length > 107:
+        raise ValueError(f'IPC socket path too long: {length} bytes > 107')
+    return length
+
+
 def _check(root, report):
     s=read_plan(root)
     evidence={}
     model=Path(s['model']['path'])
     service=s['deployment']['service']
     errors={}
+    try:
+        for filename in service.get('kv_endpoint_files',[]):
+            config=json.loads(Path(filename).read_text())
+            if not config.get('endpoint_list'):
+                raise ValueError('Empty KV endpoint configuration: '+filename)
+        report['checks']['kv_endpoints']='PASSED' if service.get('kv_endpoint_files') else 'NOT_APPLICABLE'
+    except Exception as exc:
+        report['checks']['kv_endpoints']='FAILED'
+        errors['kv_endpoints']=repr(exc)
+    try:
+        evidence['ipc_path_bytes'] = check_ipc_path()
+        if any(m['target'] in ['/bench-tmp','/bench-cache'] for m in s['container']['mounts']):
+            raise ValueError('Reserved runtime mount target')
+        report['checks']['ipc_path']='PASSED'
+    except Exception as exc:
+        report['checks']['ipc_path']='FAILED'
+        errors['ipc_path']=repr(exc)
     try:
         report['checks']['storage']='PASSED'
         service=s['deployment']['service']
@@ -87,7 +114,14 @@ def _check(root, report):
         errors['tokenizer']=repr(exc)
     try:
         report['checks']['benchmark_tool']='PASSED'
-        if not (Path(s['benchmark']['tool_dir'])/'aisbench_test.py').is_file(): raise ValueError('Missing benchmark tool')
+        benchmark=s['benchmark']
+        if not benchmark.get('executable'):
+            raise ValueError('Image must provide ais_bench CLI')
+        from aisbench_cli import dataset_for, check_dataset
+        if not benchmark.get('datasets'): raise ValueError('Missing benchmark.datasets')
+        for key in benchmark['datasets']: dataset_for(benchmark, {'dataset_id':key})
+        for case in benchmark.get('cases', []):
+            check_dataset(dataset_for(benchmark,case), case['formal_requests'])
     except Exception as exc:
         report['checks']['benchmark_tool']='FAILED'
         errors['benchmark_tool']=repr(exc)

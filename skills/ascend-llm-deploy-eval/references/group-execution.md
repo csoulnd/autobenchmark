@@ -8,7 +8,7 @@
 2. 在仓库外生成 group-plan.json，格式见 examples/group-plan.example.json。每个 task 提供 id、host（任务协调进程所在主机）、run_dir、冻结 plan.json 中的 job_spec_sha256、depends_on。它是运行编排清单，不改变 job_spec v3。group_id 与各 job_id 使用不同编号，run_dir 不与子任务目录重叠。
 3. 每台机器在所有 bindings 中使用同一规范地址，不能用不同 SSH 别名/IP 将同一主机伪装成两项资源。协调器从各任务 resolved-cluster.json 的节点登记推导资源集合，不接受手填的空资源集合。当前资源键是规范主机地址，不支持别名自动归一。
 4. 整组主节点必须能免密 SSH 到全部任务协调节点；子任务协调节点必须能连接各自执行节点。所有子任务 task_end 必须为 stop_container。当前主机不作为自己的 SSH 例外，提前核验自连接。
-5. **实际提交前**向用户给出以下可复制观察命令，填入真实主节点与路径并正确 shell 引号。用户可以在终端观察进度，不要求其开启终端才运行任务。
+5. **实际提交前**按 [任务监控](task-monitoring.md#提交前的三类观察命令) 提供整体进展、服务日志、测试日志三类命令；以下为整体进展命令，填入真实主节点与路径并正确 shell 引号。用户可以在终端观察进度，不要求其开启终端才运行任务。
 
 ```sh
 ssh -t user@main.example 'python3 /work/GROUP/common/skill-snapshot/scripts/watch_events.py --run-dir /work/GROUP'
@@ -39,7 +39,7 @@ SSH 不可达记为 UNKNOWN，占用资源保持保留，继续检查；连续3�
 | 整组/任务 | group、task | 启动、终止或阻塞 |
 | subcase | deploy、deploy_attempt、smoke | 部署健康检查、部署尝试、真实请求冒烟；服务复用时 smoke=skipped |
 | subcase | testing | 包含全部尝试，最终结果以验证产物为准 |
-| attempt | cache_reset、warmup、benchmark、validate | 直接缓存重置、前缀预热、正式请求、结果验证 |
+| attempt | cache_reset、benchmark、validate | 可选缓存重置、AISBench原生预热与正式请求、结果验证；预热细节见原生日志 |
 | attempt | client_cleanup、attempt | 客户端释放及尝试结果；重试单独记 retry |
 | subcase | reconcile、release | 失败后的服务状态核验、case资源释放策略 |
 | 任务 | job_release | 全部登记节点的任务级释放 |

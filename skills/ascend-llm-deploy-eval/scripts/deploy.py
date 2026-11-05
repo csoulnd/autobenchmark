@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-from preflight import check
+from preflight import check, CONTAINER_TMP
 from container_baseline import docker_run_args
 from stage_runtime import command,entry,inspect_owned,read_plan,ready,state,transition,ownership_digest,pool_state,save_pool
 
@@ -36,10 +36,12 @@ def start_node(root, action="start"):
         for m in s['container']['mounts']: args+=['-v',m['source']+':'+m['target']+(':ro' if m['read_only'] else '')]
         task_root=Path(s.get('storage',{}).get('root',root))
         import hashlib
-        task_root = task_root/'.internal'/'container-runtime'/hashlib.sha256(s['target']['host'].encode()).hexdigest()[:16]/s['target']['container']
+        task_root = task_root/'runtime'/hashlib.sha256((s['target']['host']+'/' +s['target']['container']).encode()).hexdigest()[:12]
         for name in ['tmp','cache']: (task_root/name).mkdir(parents=True,exist_ok=True)
-        args+=['--log-driver','none','-e','TMPDIR='+str(task_root/'tmp'),
-               '-e','XDG_CACHE_HOME='+str(task_root/'cache'),'-e','PYTHONDONTWRITEBYTECODE=1',
+        args+=['-v',str(task_root/'tmp')+':/bench-tmp',
+               '-v',str(task_root/'cache')+':/bench-cache',
+               '--log-driver','none','-e','TMPDIR='+CONTAINER_TMP,
+               '-e','XDG_CACHE_HOME=/bench-cache','-e','PYTHONDONTWRITEBYTECODE=1',
                '-w',str(root),image,'sleep','infinity']
         cid=command(args,timeout=180).strip()
     if s.get('container_registry'):

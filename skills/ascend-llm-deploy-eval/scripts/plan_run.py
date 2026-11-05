@@ -34,8 +34,11 @@ def normalize(spec):
                 container.setdefault(key, copy.deepcopy(value))
         s.setdefault('cleanup',{'after_case':'keep_service','task_end':'stop_container'})
         for case in s.get('cases',[]):
-            for k,v in {'formal_requests':case['concurrency']*4,'prefix_num':1,'seed':1,
-                        'steady_state':False,'request_rate':0,'warmup':True,'reset_cache':True,'timeout_seconds':5400}.items():
+            case.setdefault('mode', 'perf')
+            if case['mode'] != 'perf':
+                continue
+            for k,v in {'formal_requests':case['concurrency']*4,'dataset_id':'default','num_warmups':1,
+                        'steady_state':False,'request_rate':0,'warmup':True,'reset_cache':False,'timeout_seconds':5400}.items():
                 case.setdefault(k,v)
     for subtask in s.get('sub_tasks', []):
         subtask.setdefault('after_case', s['cleanup']['after_case'])
@@ -84,6 +87,9 @@ def plan(spec,root):
     s=normalize(spec); errors=validate(s)
     if errors: raise ValueError('; '.join(errors))
     if s['state']!='ready': raise ValueError('Draft requires attended resolution')
+    from aisbench_cli import require_supported_mode
+    for case in s['cases']:
+        require_supported_mode(case)
     result={'job_spec':s,'job_spec_sha256':digest(s),'status':'PLANNED','runtime_verified':False}
     if s['schema_version']=='3.0':
         result['sequence']=s['sub_tasks']
@@ -96,7 +102,7 @@ def plan(spec,root):
     save(root/'common/plan.json',result); save(root/'common/job_spec.json',s)
     # Preserve the complete executable package used by this job.
     if not (root/'common/skill-snapshot').exists():
-        shutil.copytree(PACKAGE,root/'common/skill-snapshot',ignore=shutil.ignore_patterns('__pycache__','*.pyc','test_*.py','references','examples','SKILL.md','agents'))
+        shutil.copytree(PACKAGE,root/'common/skill-snapshot',ignore=shutil.ignore_patterns('__pycache__','*.pyc','test_*.py','references','examples','SKILL.md','agents','assets','docs','tests','README.md'))
     if s['schema_version']=='3.0':
         # Relative snapshot entry makes the generated task package transferable.
         (root/'run.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\n'

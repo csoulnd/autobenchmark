@@ -51,4 +51,3 @@ def verify_groups(bindings, ssh, report_path):
         report.update(status='FAILED',error=str(exc)); raise
     finally:
         report_path.write_text(json.dumps(report,indent=2),encoding='utf-8')
-

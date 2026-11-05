@@ -54,7 +54,7 @@ def build(spec_path, bindings_path, jobs_dir, date, host, remote_root):
     from node_identity import node_job_id, node_root
     node_map={key:{'parent_job_id':job_id,'node_job_id':node_job_id(job_id,key),
         'host':node['host'],'root':str(node_root(node,job_id,key)),
-        'archive_relative_path':'nodes/'+node_job_id(job_id,key),'package':node['package']}
+        'archive_relative_path':'nodes/'+key,'package':node['package']}
         for key,node in bindings['nodes'].items()}
     (root/'common/node-map.json').write_text(json.dumps(node_map,indent=2),encoding='utf-8')
     inputs=root/'common/inputs';inputs.mkdir()
@@ -116,7 +116,7 @@ def main():
     ap.add_argument('action',choices=['prepare','submit','status'])
     ap.add_argument('--host',required=True);ap.add_argument('--remote-root',required=True)
     ap.add_argument('--job-spec',type=Path);ap.add_argument('--bindings',type=Path)
-    ap.add_argument('--date');ap.add_argument('--local-jobs-dir',type=Path,default=Path('D:/autobenchmark-local/jobs'))
+    ap.add_argument('--date');ap.add_argument('--local-jobs-dir',type=Path,default=Path.home()/'.autobenchmark'/'jobs')
     a=ap.parse_args();remote_path(a.remote_root)
     if a.action!='prepare':
         print(ssh(a.host,['python3',a.remote_root+'/common/skill-snapshot/scripts/submission.py',a.action,'--run-dir',a.remote_root]));return

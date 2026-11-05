@@ -1,4 +1,4 @@
-"""One AISBench attempt inside the owned container; always release its client/links."""
+"""One AISBench attempt inside the owned container; always release its client process group."""
 import json
 import os
 from pathlib import Path
@@ -11,7 +11,8 @@ from service_process import members,ticks
 from validate_case import validate
 from cache_reset import reset_instances
 from task_events import emit
-from tool_links import cleanup as cleanup_links
+from aisbench_cli import write_config, commands
+from metric_evidence import capture, summarize
 
 
 def run(root,folder):
@@ -27,59 +28,39 @@ def run(root,folder):
     def http(port,path,method='GET'):
         with opener.open(urllib.request.Request(reset_targets[port]+path,method=method),timeout=30) as r:
             return r.read().decode()
-    case=dict(case,prefill_dp=spec['benchmark']['prefill_dp'],reset_ports=list(reset_targets))
+    case=dict(case,prefill_dp=spec['benchmark']['prefill_dp'],reset_ports=list(reset_targets) if case.get('reset_cache', False) else [])
     (folder/'case.json').write_text(json.dumps(case,indent=2))
-    work=Path(spec['benchmark']['aisbench_work_path'])
-    links=[work/'ais_bench/datasets/gsm8k/test.jsonl',work/'ais_bench/benchmark/configs/models/vllm_api/vllm_api_chat_temp.py']
-    # Existing files are never ours to remove. Stop without retry if ownership unclear.
-    for link in links:
-        if link.exists() or link.is_symlink():
-            (folder/'cleanup.json').write_text(json.dumps({'released':False,'error':'Existing link/file: '+str(link)}))
-            raise ValueError('Existing tool link/file; reconcile before running')
-    tool=folder/'tool'; datasets=folder/'datasets'; datasets.mkdir()
-    from urllib.parse import urlsplit
-    endpoint=urlsplit(service['endpoint'])
-    config={'DATASET_PATH':str(datasets),'WORK_PATH':str(work),'MODEL_NAME':spec['model']['served_name'],
-        'MODEL_PATH':spec['model']['path'],'HOST_IP':endpoint.hostname,'HOST_PORT':str(endpoint.port),
-        'URL':'','API_KEY':'','DEFAULT_PERFORMANCE_TEST':'stable_stage' if case.get('steady_state', False) else 'default_perf','OUTPUT_DIR':'./outputs',
-        'POD_INFO':[service['prefill_url'].split('://',1)[-1] if 'prefill_url' in service else f"127.0.0.1:{service['prefill_port']}"]}
-    config.pop('DEFAULT_PERFORMANCE_TEST')
-    config_path=folder/'tool-config.json'
-    config_path.write_text(json.dumps({'case':case,'service':config,'dp':spec['benchmark']['prefill_dp'],'npu_num':len(service['npu_ids'])},indent=2))
     process=None; errors=[]; result=None; failure=None; started=time.monotonic()
     current_stage = 'cache_reset'
     try:
+        config=write_config(spec,case,service,folder)
         event('cache_reset', 'doing' if case['reset_cache'] else 'skipped')
         if case['reset_cache']:
+            if not reset_targets: raise ValueError('Cache reset requested but no reset endpoint configured')
             reset_instances(folder, list(reset_targets), http, reset_targets)
             event('cache_reset', 'done')
-        for port in reset_targets:
-            (folder/f'metrics-{port}-before.txt').write_text(http(port,'/metrics'))
-        current_stage = 'testing_detail'
-        argv=['python3',str(Path(spec['benchmark']['tool_dir'])/'aisbench_test.py')]
-        (folder/'command.json').write_text(json.dumps(argv))
-        with (folder/'runner-diagnostics.log').open('w') as log:
-            process=subprocess.Popen(argv,cwd=tool,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,
-                env={**os.environ, 'BENCH_CASE_CONFIG':str(config_path), 'BENCH_LINK_MANIFEST':str(folder/'tool-links.json'), 'BENCH_DATASET_CACHE':str(Path(spec.get('storage', {}).get('root', root))/'dataset-cache'), 'BENCH_EVENT_ROOT':str(root), 'BENCH_EVENT_CONTEXT':json.dumps(context),
-                     'PYTHONPATH':str(Path(__file__).parent)+os.pathsep+os.environ.get('PYTHONPATH','')})
-            identity={'pid':process.pid,'start_ticks':ticks(process.pid)}
-            (folder/'client.json').write_text(json.dumps(identity))
-            deadline=time.monotonic()+case['timeout_seconds']
-            while True:
-                if spec.get('storage'):
-                    from disk_guard import check as disk_check
-                    disk_check(spec['storage']['root'], spec['storage']['subtasks'], tool.resolve().parent.parent)
-                remaining=deadline-time.monotonic()
-                if remaining<=0: raise subprocess.TimeoutExpired(argv,case['timeout_seconds'])
-                try:
-                    code=process.wait(timeout=min(30,remaining)); break
-                except subprocess.TimeoutExpired:
-                    continue
-        if code == 0:
-            (folder/'runner-diagnostics.log').unlink()
-        if code: raise RuntimeError(f'Benchmark exited {code}; see tool/aisbench.log and runner-diagnostics.log')
-        for port in reset_targets:
-            (folder/f'metrics-{port}-after.txt').write_text(http(port,'/metrics'))
+        for current_stage, argv in commands(spec['benchmark']['executable'], config, case, folder):
+            capture(service.get('metric_instances', []), folder, 'before')
+            event(current_stage, 'doing')
+            (folder/(current_stage+'-command.json')).write_text(json.dumps(argv))
+            with (folder/(current_stage+'.log')).open('w') as log:
+                process=subprocess.Popen(argv,cwd=folder,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+                (folder/'client.json').write_text(json.dumps({'pid':process.pid,'start_ticks':ticks(process.pid)}))
+                deadline=time.monotonic()+case['timeout_seconds']
+                while True:
+                    if spec.get('storage'):
+                        from disk_guard import check as disk_check
+                        disk_check(spec['storage']['root'], spec['storage']['subtasks'], folder.parent)
+                    remaining=deadline-time.monotonic()
+                    if remaining<=0: raise subprocess.TimeoutExpired(argv,case['timeout_seconds'])
+                    try:
+                        code=process.wait(timeout=min(30,remaining)); break
+                    except subprocess.TimeoutExpired:
+                        continue
+            (folder/'execution.json').write_text(json.dumps({'argv':argv,'returncode':code}),encoding='utf-8')
+            if code: raise RuntimeError(f'Native CLI exited {code}; see {current_stage}.log')
+            if members(process.pid): raise RuntimeError('Native CLI left child processes running')
+            event(current_stage, 'done')
         event('validate', 'doing')
         current_stage = 'validate'
         result=validate(folder,case)
@@ -100,10 +81,16 @@ def run(root,folder):
             if members(process.pid):
                 os.killpg(process.pid,signal.SIGKILL); time.sleep(1)
                 if members(process.pid): errors.append('Client process group remains')
-        errors.extend(cleanup_links(links, folder/'tool-links.json'))
         (folder/'cleanup.json').write_text(json.dumps({'released':not errors,'errors':errors,'level':'case'},indent=2))
+        try:
+            capture(service.get('metric_instances', []), folder, 'after')
+            summarize(folder)
+        except Exception as exc:
+            event('metrics', 'fail', error=repr(exc))
     event('client_cleanup', 'done' if not errors else 'fail')
-    summary={'status':'PASSED' if result and not errors else 'FAILED','error':failure,'cleanup_errors':errors,'seconds':time.monotonic()-started}
+    logs=sorted(str(path) for path in (folder/'outputs').glob('*/logs/**/*') if path.is_file())
+    (folder/'log-index.json').write_text(json.dumps({'console':str(folder/'benchmark.log'),'native_logs':logs,'work_dir':str(folder/'outputs')},indent=2),encoding='utf-8')
+    summary={'status':'PASSED' if result and not errors else 'FAILED','error':failure,'cleanup_errors':errors,'seconds':time.monotonic()-started,'log_index':str(folder/'log-index.json')}
     (folder/'summary.json').write_text(json.dumps(summary,indent=2)); print(json.dumps(summary),flush=True)
     return 0 if summary['status']=='PASSED' else 2
 

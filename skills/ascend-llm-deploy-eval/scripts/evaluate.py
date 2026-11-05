@@ -5,7 +5,6 @@ import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
-from prepare_benchmark_tool import prepare
 from task_events import emit
 from stage_runtime import (entry, read_plan, ready, save, service_identity, state,
                            transition, case_state, update_case)
@@ -48,7 +47,6 @@ def evaluate(root, case):
             marker=json.loads((root/'deployment-artifacts.json').read_text())
             job=Path(spec.get('storage', {}).get('root', root))
             public=job/'sub_tasks'/case_id/f'attempt-{attempt:02}'
-            prepare(Path(spec['benchmark']['tool_dir']), public/'tool')
             info={'sub_task_id':case_id,'attempt':attempt,'case':case,
                   'deployment_run_id':marker['id'],'deployment_path':marker['path'],
                   'started_at':datetime.now(timezone.utc).isoformat(),'status':'RUNNING'}
@@ -85,8 +83,8 @@ def evaluate(root, case):
                     'artifacts': [str(folder/'validated.json')]}
         if 'Storage budget exceeded' in (summary.get('error') or ''):
             raise RuntimeError(summary['error'])
-        if not safe or not case.get('reset_cache', True):
-            raise ValueError('Unsafe to retry: client/service/cache isolation not verified')
+        if not safe:
+            raise ValueError('Unsafe to retry: client/service isolation not verified')
         print(json.dumps({'event': 'case_attempt_failed', 'case_id': case_id,
                           'attempt': attempt, 'max_attempts': limit, 'error': summary.get('error')}), flush=True)
         if attempt < limit:
