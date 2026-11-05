@@ -1,0 +1,7 @@
+此目录保留用户聊天提供的EPLB版本，不等同父目录远端当前版本。通用运行变量及env.sh用法见../NOTES.txt。
+P保留SERVER_DEV_MODE=1、EPLB、eplb_realhash_extension.EplbRealHashExtension、stair异步策略及load_collection_phase=prefill；不添加远端当前P独有的ready timeout。
+已补env.sh及真实proxy.py。代理启动参数仍按聊天原稿，不加入远端当前proxy.sh的workers8配置；须确保当前shell已加载env.sh并提供匹配Python。
+扩展来源：141.61.73.104:/mnt/share/z00939677/dsv4.1/experiments/20261101-mqsmla-dequant/eplb_realhash_extension.py。
+扩展用途：诊断RPC可freeze/resume EPLB，并snapshot专家权重哈希；不是启动即执行诊断。本次只获取源码，未调用RPC。
+唯一源码调整：原固定输出根目录改为必填EPLB_OUTPUT_DIR；P脚本将本目录加入PYTHONPATH并创建该输出目录。模块依赖torch、torch_npu、vLLM内部EPLB接口及libascendcl.so，版本适配未验证。
+原聊天代理后端IP与模型IP不一致，仍需通过P_IP/D_IP现场核对。无此EPLB配置的已确认运行成绩；Shell语法通过，Python代码与扩展导入未执行验证。

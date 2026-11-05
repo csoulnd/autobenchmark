@@ -1,0 +1,3 @@
+Parameters synchronized from successful smoke task(s) 20261101-511/512 on 2026-11-01.
+Smoke verifies deployment and a short real inference only, not long-context performance.
+Runtime values must be discovered and allocated anew. See INDEX.txt and the Skill container baseline.

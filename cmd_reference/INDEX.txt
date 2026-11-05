@@ -1,0 +1,47 @@
+当前配置矩阵入口：INDEX.md
+目录已于 2026-11-05 调整；旧路径映射见 layout-migration-20261105.json。
+以下内容为历史索引，不再作为当前执行入口。
+
+本地部署命令索引
+更新时间：2026-11-04
+
+当前可用部署参考：
+- DSV4.1 Flash 单机8卡混部：deepseekv4.1flash/single/pd-mix/mixed.sh（DP8/TP1，用户提供，未运行验证）
+- DSV4 Flash 单机1P1D：deepseekv4flash/single/pd-split/1p1d/（三套独立配置，各含p.sh、d.sh、proxy.sh和NOTES.txt）
+- GLM53 Flash 单机混部：glm5.3flash/single/pd-mix/start.sh
+- GLM53 Flash 双机1P1D：glm5.3flash/double/pd-split/1p1d/（p.sh、d.sh、proxy.sh）
+
+通用组件参考（独立启动，未在本次环境验证）：
+- Memcache 元数据服务：common/memcache/start-meta.sh
+  使用前替换 {INSTALL_PATH}，检查 mmc-meta.conf 中的地址与端口，并确认环境已安装 memcache_hybrid。
+  前台运行；仅用于需要 Memcache MetaService 的部署，不自动加入现有模型启动脚本。
+
+已移除或停用：
+- DSV4 Flash 单机混部：start.sh 已于2026-11-02删除，不作为可执行参考；目录内说明仅保留历史记录。
+
+日志要求：
+- 当前活动命令不包含 ASCEND_SLOG_PRINT_TO_STDOUT=1、ASCEND_GLOBAL_LOG_LEVEL=1；性能测试不启用这两项算子详细日志设置。
+- 本次DSV4混部运行产生约377GiB算子日志，已按用户要求清空；该完整日志未归档到本机。
+
+使用说明：
+- 历史部署参考记录健康检查及一次短请求冒烟；新增MooncakeV2版本仅恢复和静态校验，未运行；不代表长上下文性能测试通过。
+- GLM max-model-len=529408；不兼容参数 c8_enable_reshape_optim 已移除。
+- IP、网卡、端口及输出路径必须结合当前现场重新绑定；采用Skill容器基线，包含/etc/hccl_rootinfo.json，不使用固定端口兜底。
+- resolved.snapshot.json、validated.json均为历史证据，不作为当前配置。
+- 本次运行产物：D:/daily/20261102；原始计划与命令快照按历史证据保留。
+
+
+
+
+
+
+- DSV4.1 Flash 双机1P1D：deepseekv4.1flash/double/pd-split/1p1d/（P/D DP8/TP1，1017权重，MooncakeHybrid；远端当前版本，env.sh及真实代理已补齐；user-eplb子目录保留聊天EPLB版及已补扩展，均未运行，见NOTES.txt）。
+
+- DSV4.1 Flash 用户原始命令（2026-11-04）：deepseekv4.1flash/references/20261104-user-scripts/（mixed.sh混部、d.sh单独D端、NOTES.txt；均未启用EPLB；D端env.sh未提供，原始版本覆盖需现场核验；仅静态检查）。
+
+- DSV4.1 Flash 双机1P1D（2026-11-04 EPLB整理版，当前本次推荐入口）：deepseekv4.1flash/double/pd-split/1p1d/eplb-20261104/；P启用EPLB，D保持原配置；包含p.sh、d.sh、env.sh、proxy.sh、真实proxy.py和EPLB扩展；删除版本覆盖；静态校验通过，运行未验证。此前references/20261104-user-scripts仅为原始输入快照。
+
+- DSV4 Flash 双机3P1D PCP4（2026-11-04用户新增）：deepseekv4flash/double/pd-split/3p1d-pcp4_dspark1-3_mooncake-v2/；P DP1/TP1/PCP4 DSpark1，无EPLB；D DP4/TP1 DSpark3，启用EPLB；未运行。
+- DSV4 Flash 双机3P1D DP4/PCP1 PR18549：deepseekv4flash/double/pd-split/3p1d-dp4_dspark1-3_pr18549/；P DSpark1，D DSpark3，使用镜像内置修改，已移除helper调用；旧补丁资料停用但删除被审批阻止；未运行。最初DSpark5配置已移至_retired/20261104-3p1d停用；PCP4版保留。
+
+2026-11-04：两套DSV4 3P1D的D端EPLB均已关闭；DP4跨机单请求冒烟通过；本次服务容器已释放。

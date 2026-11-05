@@ -1,0 +1,10 @@
+模型：DeepSeek-V4.1-Flash。
+拓扑：单机8卡混部，卡0-7；DP8/TP1，启用专家并行及EP权重过滤。
+来源：用户于2026-11-03提供的mixed.sh；原目标路径/mnt/share/z00939677/dsv4.1/deploy/mixed.sh。
+本地整理日期：2026-11-03。仅格式化，保留全部启动参数、环境变量及现场值。
+最新运行验证时间：无；本次未部署或执行推理测试。max-model-len=1048576不代表已验证该长度性能。
+文件：mixed.sh；UTF-8无BOM、LF换行，每行一个启动选项。
+现场值：权重/mnt/share/weight/DeepSeek-V4.1-Flash；IP 172.27.9.212；网卡data0.3001；HTTP端口8568；DP RPC端口17972。迁移时按现场核实。
+依赖：匹配deepseek_v41及engram参数的vLLM-Ascend环境、CANN 9.2.0头文件路径；镜像未提供。
+服务名deepseek-v41-a5-1005-real-1p1d沿用原稿；实际启动拓扑为混部，不是P/D分离。
+运行方式：在已初始化依赖环境中bash mixed.sh，前台运行。脚本不创建容器、不加载set_env.sh、不执行健康检查或自动清理。

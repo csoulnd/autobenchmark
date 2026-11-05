@@ -1,0 +1,17 @@
+模型：DeepSeek-V4-Flash-DSpark；单机1P1D；MooncakeHybridConnector。
+拓扑：P DP4/TP1卡0-3，D DP4/TP1卡4-7；两侧启用专家并行。
+最新完整验证：2026-11-03 14:42:41（Asia/Shanghai），任务20261103-003。
+来源：任务20261103-002仅调整P DP2/TP2为DP4/TP1及相应通信配置。
+状态：两组128K/1K性能测试通过。
+总输出吞吐：前缀50%=399.5681 tokens/s；90%=1459.2630 tokens/s。
+证据：/home/d00937186/20261103-003；summary.json、release-results.json及pd-a/services/pd-a-node_a-model/results/各attempt的validated.json和tool/aisbench_result.csv。
+注意：本目录不是相邻mooncake-v2配置的验证记录。
+验证环境：root@141.61.73.104；镜像ID 4047cf76a23b；权重 /mnt/weight/DeepSeek-V4-Flash-DSpark。
+负载：输入目标131072 tokens、输出1024 tokens，并发64；前缀目标50%和90%，各256正式请求。服务端输入实际约131155 tokens（含模板开销）。
+两组均attempt 1通过；缓存重置及预热后执行。任务结束容器删除，占卡进程与监听端口释放核验通过。
+参数边界：保留各角色原有eager/graph、batch、显存等参数；DP4/TP1不表示P与D所有启动参数相同。
+现场npu-smi曾报告4号卡Critical；运行通过不代表硬件告警已消除。
+必要变量：P/D各自HCCL_BASE_PORT HTTP_PORT KV_PORT LOCAL_IP NIC_NAME RPC_PORT RUN_DIR，MODEL_PATH显式设置当前权重。IP、网卡和端口须重新现场绑定。
+代理：设置D_HTTP_PORT D_IP HTTP_PORT LOCAL_IP P_HTTP_PORT P_IP；PROXY_SCRIPT默认同目录proxy.py。
+启动顺序：P、D各自独立进程，均健康后启动proxy，再进行正式入口推理冒烟。脚本不管理容器及自动清理。
+当前目录脚本为可迁移参考；实际已执行脚本和结果以对应远端任务目录冻结证据为准。

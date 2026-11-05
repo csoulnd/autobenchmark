@@ -1,0 +1,2 @@
+# Preserve imported reference bytes; original whitespace is intentional.
+* -text -whitespace

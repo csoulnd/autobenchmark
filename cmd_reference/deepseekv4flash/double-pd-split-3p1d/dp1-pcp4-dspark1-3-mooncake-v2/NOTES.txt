@@ -1,0 +1,17 @@
+来源：2026-11-04用户在聊天提供的四实例命令；模型DeepSeek-V4-Flash-0731。
+双机3P1D：P均DP1/TP1/PCP4；D为DP4/TP1。
+P：batch tokens 10240，max seqs 128，DSpark1 enforce_eager=true，全局enforce-eager，EPLB未启用。
+D：batch tokens 768，max seqs 128，DSpark3 enforce_eager=false，FULL_DECODE_ONLY；EPLB window=1000/step=3000/redundant=0/log_interval=1000。
+两侧显存0.92，API进程4，max_model_len=1048576，FP8 KV/indexer，prefix cache及async开启；MooncakeConnectorV2。
+P原输入注释中的可选EPLB未启用：window_size=128,step_interval=256,num_redundant_experts=24,log_balancedness=true,log_balancedness_interval=256。
+规范化：沿用相邻3p1d脚本结构，现场值改为必填环境变量，移除未引用master_ip；增加RUN_DIR工作目录，保留模型参数。
+每实例必填：SHELL_RC LOCAL_IP NIC_NAME MODEL_PATH RUN_DIR HTTP_PORT RPC_PORT KV_PORT；P另需LIB_DIR。
+原输入绑定（仅参考，启动前按现场设置）：
+P1：172.27.8.17；卡0,1,2,3；HTTP=9000 RPC=12321 KV=30000 engine_id=0。
+P2：172.27.8.17；卡4,5,6,7；HTTP=8001 RPC=12322 KV=30100 engine_id=1。
+P3：172.27.8.20；卡0,1,2,3；HTTP=9000 RPC=12321 KV=30000 engine_id=0。
+D：172.27.8.20；卡4,5,6,7；HTTP=8001 RPC=12322 KV=30100 engine_id=1。
+公共原值：NIC_NAME=data0.3001；SHELL_RC=/root/.bashrc；MODEL_PATH=/mnt/share/weight/DeepSeek-V4-Flash-0731；P LIB_DIR=/usr/local/lib。
+RUN_DIR为新增必填工作目录，请使用各实例独立Linux绝对路径。source SHELL_RC可能覆盖变量，需现场确认。
+KV元数据两侧均prefill dp1/tp1、decode dp4/tp1，按用户输入保留；PCP参数仅P显式设置。
+未提供代理、镜像或软件版本。未部署或验证运行兼容性；未进行推理与性能测试。`n2026-11-04最终更新：按用户要求关闭D端EPLB，移除--enable-eplb和--eplb-config；此前EPLB参数仅为历史记录。DP4版本关闭后P1到D单请求冒烟通过，返回OK。

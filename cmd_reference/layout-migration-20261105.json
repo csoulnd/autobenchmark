@@ -1,0 +1,42 @@
+[
+  {
+    "source": "deepseekv4.1flash/double/pd-split/1p1d/eplb-20261104",
+    "destination": "deepseekv4.1flash/double-pd-split-1p1d/eplb-20261104"
+  },
+  {
+    "source": "deepseekv4.1flash/double/pd-split/1p1d/user-eplb",
+    "destination": "deepseekv4.1flash/double-pd-split-1p1d/user-eplb"
+  },
+  {
+    "source": "deepseekv4.1flash/double/pd-split/1p1d",
+    "destination": "deepseekv4.1flash/double-pd-split-1p1d/baseline"
+  },
+  {
+    "source": "deepseekv4.1flash/single/pd-mix",
+    "destination": "deepseekv4.1flash/single-pd-mix/dp8-tp1"
+  },
+  {
+    "source": "deepseekv4flash/double/pd-split/3p1d-dp4_dspark1-3_pr18549",
+    "destination": "deepseekv4flash/double-pd-split-3p1d/dp4-pcp1-dspark1-3-pr18549"
+  },
+  {
+    "source": "deepseekv4flash/double/pd-split/3p1d-pcp4_dspark1-3_mooncake-v2",
+    "destination": "deepseekv4flash/double-pd-split-3p1d/dp1-pcp4-dspark1-3-mooncake-v2"
+  },
+  {
+    "source": "deepseekv4flash/single/pd-split/1p1d/p-dp2-tp2_d-dp4-tp1_mooncake-hybrid",
+    "destination": "deepseekv4flash/single-pd-split-1p1d/p-dp2-tp2_d-dp4-tp1_mooncake-hybrid"
+  },
+  {
+    "source": "deepseekv4flash/single/pd-split/1p1d/p-dp4-tp1_d-dp4-tp1_mooncake-hybrid",
+    "destination": "deepseekv4flash/single-pd-split-1p1d/p-dp4-tp1_d-dp4-tp1_mooncake-hybrid"
+  },
+  {
+    "source": "glm5.3flash/single/pd-mix",
+    "destination": "glm5.3flash/single-pd-mix/baseline"
+  },
+  {
+    "source": "glm5.3flash/double/pd-split/1p1d",
+    "destination": "glm5.3flash/double-pd-split-1p1d/baseline"
+  }
+]

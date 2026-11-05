@@ -1,0 +1,21 @@
+模型：DeepSeek-V4.1-Flash-1017，双机1P1D，P/D均DP8/TP1，MooncakeHybridConnector，DSpark5。
+来源：2026-11-03只读读取root@141.61.73.104:/mnt/share/z00939677/dsv4.1/1p1d-650E-dsv41/的p.sh、d.sh、proxy.sh、env.sh和load_balance_proxy_server_example.py。
+本目录根部采用当前远端配置；user-eplb/保留聊天提供的不同版本，禁止混为一个配置。
+文件：p.sh、d.sh、proxy.sh、env.sh、proxy.py、许可证及本说明；代理为真实配套源码，远端与/mnt/share/s00971618版本SHA256相同：0a8d83dee090153670f6893da5336c68a6fa57b39ce4beb714dd0a62235b76d8。
+
+env.sh必填：ASCEND_ENV_SCRIPT、ATB_ENV_SCRIPT、PYTHON_BIN_DIR、ASCEND_DEVLIB_DIR、SYSTEM_LIB_DIR。对应来源为CANN set_env.sh、ATB set_env.sh、/usr/local/python3.11.10/bin、Ascend latest/aarch64-linux/devlib、/usr/lib64。只变量化路径，保留初始化顺序。
+P/D必填：RUN_DIR NIC_NAME LOCAL_IP AICPU_HEADERS MODEL_PATH BIND_HOST HTTP_PORT RPC_PORT KV_PORT ENGINE_ID；ENV_SCRIPT默认同目录env.sh。所有路径使用当前Linux绝对路径；MODEL_PATH应为1017权重，头文件来源为CANN9.2.0/aarch64/C++14.3.0。
+代理必填：RUN_DIR PROXY_HOST PROXY_PORT P_IP P_HTTP_PORT D_IP D_HTTP_PORT；自动加载env.sh，默认同目录proxy.py，workers=8。P/D/代理日志分别追加至RUN_DIR/logs/，模型profiler位于RUN_DIR/dsv4_profile。
+启动：在P/D各自已准备好的容器内分别bash p.sh、bash d.sh，就绪后在代理节点bash proxy.sh。未自动启动容器、分配设备或执行健康检查。
+
+当前远端P：batch tokens32768，seqs32，显存0.85，HCCL缓冲1024，seed1024，全局eager及speculative eager=true，VLLM_ENGINE_READY_TIMEOUT_S=3600。没有启用EPLB、自定义worker扩展或SERVER_DEV_MODE。
+当前远端D：batch tokens1024，seqs64，显存0.93，HCCL缓冲1600，FULL_DECODE_ONLY，speculative eager=false，scheduler_config.recompute_scheduler_enable=true。
+两端block128、prefix cache开启、API进程8、renderer workers8、Engram CPU offload/DP shared memory、deepseek_v4_fp8。未显式设备列表，仍由容器环境确定。
+原当前P/D地址172.27.8.17/172.27.8.20，当前proxy.sh使用相同地址；聊天代理为172.27.9.211/212属于另一来源。标准化后均由现场变量明确绑定。
+规范化：UTF-8无BOM、LF，每行一个启动选项；模型工作目录明确为RUN_DIR；日志在环境检查后开启；KV JSON用python3安全序列化，保留kv_port数值类型。没有安装环境或运行服务。
+
+历史证据限制：远端README称4K/2K吞吐20623.8282 token/s、128K/1K吞吐3156.5434 token/s，但其描述P batch4096/seqs64/显存0.90、D关闭prefix cache，与当前脚本不同。因此仅视为其他历史配置成绩，不作为当前配置验证结果。
+README记录镜像sha256:980b173445b887163aa04acb70c71ba374cc745fae0531de5eddd54b4809d35e及自定义Python包/Engram修改；未核实当前容器安装状态，不能只凭VLLM_VERSION=0.30.0重建完整环境。
+验证：全部shell脚本bash -n通过；字面量JSON解析及DP8/TP1声明静态核对通过；未执行Python依赖导入、env加载、动态JSON生成、推理或性能测试。原代理已补齐不等于当前环境兼容性已经验证。
+
+2026-11-03修正：根目录p.sh、d.sh删除固定的VLLM_VERSION=0.30.0，插件默认读取实际安装版本。两台指定镜像实际为vLLM 0.32.0+empty；旧覆盖值导致cache_config.py走错兼容分支并导入不存在的kv_cache_planning。取消覆盖后两台镜像均通过缓存配置模块导入验证；完整部署与推理冒烟尚未验证。user-eplb/保留原始参考版本。

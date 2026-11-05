@@ -1,0 +1,8 @@
+_ascend_runs/
+_retired/
+__pycache__/
+*.pyc
+*.rar
+*.zip
+*.tar
+*.tar.gz

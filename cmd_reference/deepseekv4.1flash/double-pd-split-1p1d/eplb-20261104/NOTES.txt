@@ -1,0 +1,11 @@
+DSV4.1 Flash 双机1P1D，P端启用EPLB，DP8/TP1 + DP8/TP1，MooncakeHybridConnector，DSpark5。
+来源：2026-11-04用户要求整理为完整1P1D；P端采用已有user-eplb配置，D端采用同目录规范化配置（与本次提供D命令核心参数一致）。用户本次第一段mixed命令并非P生产者脚本，因此没有直接将mixed.sh改名为p.sh。
+P端：--enable-eplb，stair异步策略，window_size8、step_interval16、num_redundant_experts0、load_collection_phase=prefill；包含真实eplb_realhash_extension.py诊断扩展。batch32768/seq32/显存0.85，全局eager。
+D端：未启用EPLB，保留用户D配置；batch1024/seq64/显存0.93、FULL_DECODE_ONLY、recompute、combine_quant_mode4。
+两端删除VLLM_VERSION固定覆盖；启动等待设置为3600秒，避免此前600秒加载超时。
+已补齐env.sh、proxy.sh、真实proxy.py及许可证。proxy.py复制自既有配套代理，源码未改动；proxy.sh加载环境并启动8个worker。
+部署前每个节点分别绑定：RUN_DIR（P/D不同目录）、NIC_NAME、LOCAL_IP、AICPU_HEADERS、MODEL_PATH（1017权重）、BIND_HOST、HTTP_PORT、RPC_PORT、KV_PORT、ENGINE_ID（P/D不同）。P额外设置EPLB_OUTPUT_DIR。
+环境绑定：ASCEND_ENV_SCRIPT、ATB_ENV_SCRIPT、PYTHON_BIN_DIR、ASCEND_DEVLIB_DIR、SYSTEM_LIB_DIR，按镜像实际路径填写。
+代理绑定：RUN_DIR、PROXY_HOST、PROXY_PORT、P_IP、P_HTTP_PORT、D_IP、D_HTTP_PORT；后端地址必须与两端绑定一致。
+启动顺序：在各自已准备好的容器内，导出环境及节点变量后bash p.sh / bash d.sh；两端/health通过后，在代理节点导出环境与代理变量，bash proxy.sh。
+本包只完成shell语法与文件完整性检查，尚未验证EPLB扩展导入及本配置端到端推理。此前无EPLB配置的冒烟成功不代表本包已验证。

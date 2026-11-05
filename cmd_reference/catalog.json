@@ -1,0 +1,282 @@
+{
+  "schema_version": 1,
+  "description": "配置目录索引；不是执行 job_spec",
+  "configs": [
+    {
+      "model": "deepseekv4.1flash",
+      "scheme": "double-pd-split-1p1d",
+      "config": "eplb-20261104",
+      "path": "deepseekv4.1flash/double-pd-split-1p1d/eplb-20261104",
+      "instances": [
+        {
+          "script": "d.sh",
+          "dp": "8",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": false
+        },
+        {
+          "script": "p.sh",
+          "dp": "8",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": true
+        }
+      ],
+      "proxy": "本地源码 0a8d83dee090",
+      "status": "有静态检查记录，当前配置未完成端到端验证"
+    },
+    {
+      "model": "deepseekv4.1flash",
+      "scheme": "double-pd-split-1p1d",
+      "config": "user-eplb",
+      "path": "deepseekv4.1flash/double-pd-split-1p1d/user-eplb",
+      "instances": [
+        {
+          "script": "d.sh",
+          "dp": "8",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": false
+        },
+        {
+          "script": "p.sh",
+          "dp": "8",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": true
+        }
+      ],
+      "proxy": "本地源码 0a8d83dee090",
+      "status": "有静态检查记录，当前配置未完成端到端验证"
+    },
+    {
+      "model": "deepseekv4.1flash",
+      "scheme": "double-pd-split-1p1d",
+      "config": "baseline",
+      "path": "deepseekv4.1flash/double-pd-split-1p1d/baseline",
+      "instances": [
+        {
+          "script": "d.sh",
+          "dp": "8",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": false
+        },
+        {
+          "script": "p.sh",
+          "dp": "8",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": false
+        }
+      ],
+      "proxy": "本地源码 0a8d83dee090",
+      "status": "有静态检查记录，当前配置未完成端到端验证"
+    },
+    {
+      "model": "deepseekv4.1flash",
+      "scheme": "single-pd-mix",
+      "config": "dp8-tp1",
+      "path": "deepseekv4.1flash/single-pd-mix/dp8-tp1",
+      "instances": [
+        {
+          "script": "mixed.sh",
+          "dp": "8",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "未提取",
+          "eplb": false
+        }
+      ],
+      "proxy": "不适用",
+      "status": "有静态检查记录，当前配置未完成端到端验证"
+    },
+    {
+      "model": "deepseekv4flash",
+      "scheme": "double-pd-split-3p1d",
+      "config": "dp4-pcp1-dspark1-3-pr18549",
+      "path": "deepseekv4flash/double-pd-split-3p1d/dp4-pcp1-dspark1-3-pr18549",
+      "instances": [
+        {
+          "script": "d.sh",
+          "dp": "4",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeConnectorV2",
+          "eplb": false
+        },
+        {
+          "script": "p1.sh",
+          "dp": "4",
+          "tp": "1",
+          "pcp": "1",
+          "connector": "MooncakeConnectorV2",
+          "eplb": false
+        },
+        {
+          "script": "p2.sh",
+          "dp": "4",
+          "tp": "1",
+          "pcp": "1",
+          "connector": "MooncakeConnectorV2",
+          "eplb": false
+        },
+        {
+          "script": "p3.sh",
+          "dp": "4",
+          "tp": "1",
+          "pcp": "1",
+          "connector": "MooncakeConnectorV2",
+          "eplb": false
+        }
+      ],
+      "proxy": "待绑定公共 proxy；启动参数待补齐",
+      "status": "整套 A/B 评测未通过；不得沿用单请求冒烟结论"
+    },
+    {
+      "model": "deepseekv4flash",
+      "scheme": "double-pd-split-3p1d",
+      "config": "dp1-pcp4-dspark1-3-mooncake-v2",
+      "path": "deepseekv4flash/double-pd-split-3p1d/dp1-pcp4-dspark1-3-mooncake-v2",
+      "instances": [
+        {
+          "script": "d.sh",
+          "dp": "4",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeConnectorV2",
+          "eplb": false
+        },
+        {
+          "script": "p1.sh",
+          "dp": "1",
+          "tp": "1",
+          "pcp": "4",
+          "connector": "MooncakeConnectorV2",
+          "eplb": false
+        },
+        {
+          "script": "p2.sh",
+          "dp": "1",
+          "tp": "1",
+          "pcp": "4",
+          "connector": "MooncakeConnectorV2",
+          "eplb": false
+        },
+        {
+          "script": "p3.sh",
+          "dp": "1",
+          "tp": "1",
+          "pcp": "4",
+          "connector": "MooncakeConnectorV2",
+          "eplb": false
+        }
+      ],
+      "proxy": "待绑定公共 proxy；启动参数待补齐",
+      "status": "整套 A/B 评测未通过；不得沿用单请求冒烟结论"
+    },
+    {
+      "model": "deepseekv4flash",
+      "scheme": "single-pd-split-1p1d",
+      "config": "p-dp2-tp2_d-dp4-tp1_mooncake-hybrid",
+      "path": "deepseekv4flash/single-pd-split-1p1d/p-dp2-tp2_d-dp4-tp1_mooncake-hybrid",
+      "instances": [
+        {
+          "script": "d.sh",
+          "dp": "4",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": false
+        },
+        {
+          "script": "p.sh",
+          "dp": "2",
+          "tp": "2",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": false
+        }
+      ],
+      "proxy": "本地源码 48e2b7091a85",
+      "status": "未重新运行；历史范围见原始记录"
+    },
+    {
+      "model": "deepseekv4flash",
+      "scheme": "single-pd-split-1p1d",
+      "config": "p-dp4-tp1_d-dp4-tp1_mooncake-hybrid",
+      "path": "deepseekv4flash/single-pd-split-1p1d/p-dp4-tp1_d-dp4-tp1_mooncake-hybrid",
+      "instances": [
+        {
+          "script": "d.sh",
+          "dp": "4",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": false
+        },
+        {
+          "script": "p.sh",
+          "dp": "4",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeHybridConnector",
+          "eplb": false
+        }
+      ],
+      "proxy": "本地源码 48e2b7091a85",
+      "status": "未重新运行；历史范围见原始记录"
+    },
+    {
+      "model": "glm5.3flash",
+      "scheme": "single-pd-mix",
+      "config": "baseline",
+      "path": "glm5.3flash/single-pd-mix/baseline",
+      "instances": [
+        {
+          "script": "start.sh",
+          "dp": "4",
+          "tp": "2",
+          "pcp": "未显式指定",
+          "connector": "未提取",
+          "eplb": false
+        }
+      ],
+      "proxy": "不适用",
+      "status": "未重新运行；历史范围见原始记录"
+    },
+    {
+      "model": "glm5.3flash",
+      "scheme": "double-pd-split-1p1d",
+      "config": "baseline",
+      "path": "glm5.3flash/double-pd-split-1p1d/baseline",
+      "instances": [
+        {
+          "script": "d.sh",
+          "dp": "8",
+          "tp": "1",
+          "pcp": "未显式指定",
+          "connector": "MooncakeConnectorV1",
+          "eplb": false
+        },
+        {
+          "script": "p.sh",
+          "dp": "4",
+          "tp": "2",
+          "pcp": "未显式指定",
+          "connector": "MooncakeConnectorV1",
+          "eplb": false
+        }
+      ],
+      "proxy": "本地源码 48e2b7091a85",
+      "status": "未重新运行；历史范围见原始记录"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+来源：2026-11-04 用户在聊天提供的两份脚本，独立保存，不覆盖既有部署基线。
+mixed.sh：单机8卡混部，DP8/TP1；IP 172.27.9.212，HTTP8568/RPC17972；权重DeepSeek-V4.1-Flash；batch4096/seq64/显存0.90；API1；DSpark5，FULL_DECODE_ONLY。与既有single/pd-mix/mixed.sh命令一致。提取cat heredoc中的脚本内容，未执行远端写文件命令。
+d.sh：PD分离D端，DP8/TP1；IP 172.27.8.20，HTTP8467/RPC16972/KV21870；1017权重；batch1024/seq64/显存0.93；API8/renderer8；MooncakeHybridConnector消费者；recompute开启、combine_quant_mode=4。
+两份均未包含--enable-eplb，enable_force_eplb=false；本次输入没有P脚本或代理，不构成完整1P1D部署包。
+D端引用同目录env.sh，但用户本次未提供其内容；未自动套用其他版本env.sh。使用前需提供匹配环境初始化。
+保留原始VLLM_VERSION=0.30.0作为来源记录：对已验证的vLLM0.32.0镜像，该覆盖值会导致错误兼容分支，部署时需删除覆盖或按实际版本核验。
+CANN9.2.0头文件路径、IP、端口、权重路径均为原始值，执行前须现场绑定。D端未设置VLLM_ENGINE_READY_TIMEOUT_S；此前600秒默认值导致加载超时，实际部署可按证据配置3600秒。
+验证范围：bash -n语法检查；未执行本组脚本，不代表推理或性能验证通过。

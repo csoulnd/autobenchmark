@@ -1,0 +1,8 @@
+2026-11-04用户提供的双机3P1D：P DP4/TP1/PCP1、DSpark1 eager=true、seq128、无EPLB；D DP4/TP1、DSpark3 eager=false、seq128、启用EPLB。batch tokens为10240/768。KV元数据prefill DP4。
+现场变量沿用相邻PCP4版本规范：SHELL_RC LOCAL_IP NIC_NAME MODEL_PATH RUN_DIR HTTP_PORT RPC_PORT KV_PORT；P另需LIB_DIR。
+原绑定：P1/P2位于172.27.8.17，P3/D位于172.27.8.20；各节点前实例卡0-3，HTTP9000/RPC12321/KV30000；后实例卡4-7，HTTP8001/RPC12322/KV30100。
+原网卡data0.3001；权重/mnt/share/weight/DeepSeek-V4-Flash-0731；SHELL_RC=/root/.bashrc；LIB_DIR=/usr/local/lib。
+P未启用的EPLB注释参数：window128/step256/redundant24/log256。
+2026-11-04用户说明即将使用的镜像已包含对应PR修改；已移除四实例helper调用，直接使用镜像安装包。未验证镜像及运行结果。
+本地helper、归档、upstream和_retired中的code-17/code-20已停用；删除被自动审批拒绝，文件暂留，启动不再引用。
+`n2026-11-04最终更新：按用户要求关闭D端EPLB，移除--enable-eplb和--eplb-config；此前EPLB参数仅为历史记录。DP4版本关闭后P1到D单请求冒烟通过，返回OK。
