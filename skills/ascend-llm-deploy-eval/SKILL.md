@@ -48,4 +48,3 @@ logs/coordinator.log 记录协调决策；logs/DEPLOYMENT-runNN/NODE-INSTANCE.lo
 提交前告知进展、服务日志和结果的实际路径。按用户授权推进，不因内部流程重复索要许可；设计讨论和手工执行不自动创建监控。目录不自动删除，资源释放已核验、所需结果已保留且无异常后可由外层释放；异常证据保留。
 
 本地 mock 和 Bash 测试不代表真实 Ascend/Linux/Docker/AISBench 版本验证。报告区分本地回归、Linux 集成与实际模型测试。
-
