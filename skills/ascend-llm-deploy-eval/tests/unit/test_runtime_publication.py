@@ -79,6 +79,19 @@ class RuntimePublicationTests(unittest.TestCase):
             self.assertEqual(record['status'], 'FAILED')
             self.assertEqual(record['task_id'], 'case1')
 
+    def test_interruption_keeps_its_identity_and_does_not_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / 'receipt.json'
+            argv = ['publish_runtime.py', '--host', 'host', '--work-root', '/work',
+                    '--task-id', 'case1', '--receipt', str(receipt)]
+            with patch.object(sys, 'argv', argv), patch.object(publish_runtime, 'publish', side_effect=KeyboardInterrupt('user stop')) as remote:
+                with self.assertRaises(KeyboardInterrupt):
+                    publish_runtime.main()
+                remote.assert_called_once()
+            record = json.loads(receipt.read_text())
+            self.assertEqual(record['status'], 'INTERRUPTED')
+            self.assertEqual(record['error'], 'user stop')
+
     @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux receiver uses flock')
     def test_receiver_idempotence_conflict_and_symlink_escape(self):
         with tempfile.TemporaryDirectory() as directory:

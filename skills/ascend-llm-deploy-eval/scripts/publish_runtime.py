@@ -89,8 +89,9 @@ def main():
             if not args.plan_only:
                 manifest = publish(args.host, args.work_root, args.task_id, args.input)
             record = dict(status='PLANNED' if args.plan_only else 'PUBLISHED', **manifest)
-        except Exception as error:
-            json.dump(dict(status='FAILED', host=args.host, task_id=args.task_id,
+        except BaseException as error:
+            json.dump(dict(status='INTERRUPTED' if isinstance(error, KeyboardInterrupt) else 'FAILED',
+                           host=args.host, task_id=args.task_id,
                            error=str(error)), stream, indent=2)
             raise
         json.dump(record, stream, indent=2)
