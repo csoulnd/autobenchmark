@@ -29,11 +29,9 @@
 
 ## 详细文档
 
-- [使用与验证说明](skills/ascend-llm-deploy-eval/docs/usage.md)：执行命令、整组任务、监控、检查项、资源释放与验证边界。
-- [Skill 使用流程](skills/ascend-llm-deploy-eval/SKILL.md)：操作步骤与能力范围。
-- [任务配置示例](skills/ascend-llm-deploy-eval/examples/job_spec.compact.json) · [现场绑定示例](skills/ascend-llm-deploy-eval/examples/bindings.compact.json)。
-- [当前设计](skills/ascend-llm-deploy-eval/docs/design.md) · [工程计划](skills/ascend-llm-deploy-eval/docs/project-plan.md) · [决策记录](skills/ascend-llm-deploy-eval/docs/decisions.md)。
-
-- [开发与测试](skills/ascend-llm-deploy-eval/docs/development.md)：目录约定、离线测试与现场验证边界。
-
-- [原生 CLI 适配](skills/ascend-llm-deploy-eval/docs/native-cli.md)：镜像安装、现场参数与结果语义。
+- [使用说明](skills/ascend-llm-deploy-eval/docs/usage.md)。
+- [Skill 使用流程](skills/ascend-llm-deploy-eval/SKILL.md)。
+- [设计说明](skills/ascend-llm-deploy-eval/docs/design.md)。
+- [统一 CLI 与配置](skills/ascend-llm-deploy-eval/docs/compact-cli.md)。
+- [原生 CLI 适配](skills/ascend-llm-deploy-eval/docs/native-cli.md)。
+- [原生前缀数据](skills/ascend-llm-deploy-eval/docs/generated-data.md)。
