@@ -25,6 +25,18 @@ def finish(runtime):
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_failed_runtime_stop_requires_verified_cleanup_evidence(self):
+        for cleanup in ('VERIFIED','UNVERIFIED'):
+            with self.subTest(cleanup=cleanup), tempfile.TemporaryDirectory() as root:
+                def executor(*args):
+                    return 'operation.failed','FAILED',dict(cleanup_status=cleanup,error_code='DEPLOYMENT_FAILED')
+                runtime=Runtime(root,'t',executor)
+                runtime.submit(command(plan_ref='frozen'))
+                finish(runtime)
+                self.assertEqual(runtime.can_stop(),cleanup=='VERIFIED')
+                runtime.active='unknown-operation'
+                self.assertFalse(runtime.can_stop())
+
     def test_cancel_accepted_before_success_boundary_runs_cleanup(self):
         entered=threading.Event();complete=threading.Event();cleaning=threading.Event();cleaned=threading.Event()
         class Executor:
@@ -78,11 +90,12 @@ class RuntimeTests(unittest.TestCase):
             runtime=Runtime(root,'t',FakeExecutor())
             accepted=runtime.submit(command(plan_ref='frozen'))
             finish(runtime)
-            path=Path(root)/'operations'/(accepted['operation_id']+'.json')
-            self.assertEqual(load_json(path)['event_type'],'deployment.ready')
+            path=Path(root)/'results'/'operation-index.json'
+            operation=accepted['operation_id']
+            self.assertEqual(load_json(path)['operations'][operation]['event_type'],'deployment.ready')
             path.unlink()
             restored=Runtime(root,'t',FakeExecutor())
-            self.assertEqual(load_json(path)['status'],'READY')
+            self.assertEqual(load_json(path)['operations'][operation]['status'],'READY')
             self.assertEqual(restored.operations[accepted['operation_id']]['terminal_seq'],2)
     def test_replay_and_lifecycle(self):
         with tempfile.TemporaryDirectory() as root:
